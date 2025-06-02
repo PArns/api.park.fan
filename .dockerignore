@@ -1,2 +1,35 @@
+# Dependencies
 node_modules
-pnpm-lock.yaml
+.pnpm-store
+
+# Build output
+dist
+build
+
+# Development files
+.git
+.gitignore
+.env
+.env.*
+*.log
+.vscode
+.idea
+*.md
+!README.md
+
+# Test files
+coverage
+.nyc_output
+test
+__tests__
+*.test.ts
+*.spec.ts
+
+# Docker files
+Dockerfile
+.dockerignore
+
+# Misc
+.DS_Store
+*.swp
+*.swo
