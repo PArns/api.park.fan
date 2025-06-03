@@ -4,12 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { StatusModule } from './modules/status/status.module';
 import { ParksModule } from './modules/parks/parks.module';
 import { QueueTimesParserModule } from './modules/queue-times-parser/queue-times-parser.module';
-import { DatabaseModule } from './modules/database/database.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
-    DatabaseModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
