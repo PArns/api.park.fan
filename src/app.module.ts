@@ -4,10 +4,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { StatusModule } from './modules/status/status.module';
 import { ParksModule } from './modules/parks/parks.module';
 import { QueueTimesParserModule } from './modules/queue-times-parser/queue-times-parser.module';
+import { DatabaseModule } from './modules/database/database.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    DatabaseModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
@@ -23,7 +25,6 @@ import { ScheduleModule } from '@nestjs/schedule';
         password: configService.get('DB_PASS', 'postgres'),        database: configService.get('DB_NAME', 'parkfan'),
         autoLoadEntities: true,
         synchronize: true,
-        createDatabase: true,
       }),}),
     StatusModule,
     ParksModule,
