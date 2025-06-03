@@ -33,6 +33,12 @@ export class ParksController {
   async findOne(@Param('id', ParseIntPipe) id: number) {
     return this.parksService.findOne(id);
   }
+
+  @Get('rides/:id')
+  async findRide(@Param('id', ParseIntPipe) id: number) {
+    return this.parksService.findRide(id);
+  }
+  
   // Queue times related endpoints
   @Get('queue-times/statistics')
   async getQueueTimeStatistics() {

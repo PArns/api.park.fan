@@ -78,9 +78,7 @@ export class ParksService {
     // Order by name
     queryBuilder.orderBy('park.name', 'ASC'); // Get total count for pagination
     const totalCount = await queryBuilder.getCount();
-    const parks = await queryBuilder.getMany();
-
-    // Transform the data to include current queue time
+    const parks = await queryBuilder.getMany();    // Transform the data to include current queue time
     const transformedParks = parks.map((park) => ({
       ...park,
       themeAreas: park.themeAreas.map((themeArea) => ({
@@ -89,7 +87,12 @@ export class ParksService {
           ...ride,
           currentQueueTime:
             ride.queueTimes && ride.queueTimes.length > 0
-              ? ride.queueTimes[0]
+              ? {
+                  id: ride.queueTimes[0].id,
+                  waitTime: ride.queueTimes[0].waitTime,
+                  isOpen: ride.queueTimes[0].isOpen,
+                  lastUpdated: ride.queueTimes[0].lastUpdated,
+                }
               : null,
           queueTimes: undefined, // Remove the full queueTimes array from response
         })),
@@ -126,9 +129,7 @@ export class ParksService {
 
     if (!park) {
       throw new NotFoundException(`Park with ID ${id} not found`);
-    }
-
-    // Transform the data to include current queue time
+    }    // Transform the data to include current queue time
     const transformedPark = {
       ...park,
       themeAreas: park.themeAreas.map((themeArea) => ({
@@ -137,7 +138,12 @@ export class ParksService {
           ...ride,
           currentQueueTime:
             ride.queueTimes && ride.queueTimes.length > 0
-              ? ride.queueTimes[0]
+              ? {
+                  id: ride.queueTimes[0].id,
+                  waitTime: ride.queueTimes[0].waitTime,
+                  isOpen: ride.queueTimes[0].isOpen,
+                  lastUpdated: ride.queueTimes[0].lastUpdated,
+                }
               : null,
           queueTimes: undefined, // Remove the full queueTimes array from response
         })),
@@ -221,7 +227,6 @@ export class ParksService {
 
     return result.map((item) => item.country).filter(Boolean);
   }
-
   /**
    * Get all continents that have parks
    */
@@ -233,5 +238,38 @@ export class ParksService {
       .getRawMany();
 
     return result.map((item) => item.continent).filter(Boolean);
+  }  /**
+   * Get a specific ride by ID with current queue time only
+   */
+  async findRide(id: number) {
+    const ride = await this.rideRepository
+      .createQueryBuilder('ride')
+      .leftJoinAndSelect('ride.park', 'park')
+      .leftJoinAndSelect('ride.themeArea', 'themeArea')
+      .leftJoinAndSelect('ride.queueTimes', 'queueTimes')
+      .where('ride.id = :id', { id })
+      .orderBy('queueTimes.recordedAt', 'DESC')
+      .getOne();
+
+    if (!ride) {
+      throw new NotFoundException(`Ride with ID ${id} not found`);
+    }    // Get the most recent queue time for this ride
+    const currentQueueTime = ride.queueTimes && ride.queueTimes.length > 0 
+      ? {
+          id: ride.queueTimes[0].id,
+          waitTime: ride.queueTimes[0].waitTime,
+          isOpen: ride.queueTimes[0].isOpen,
+          lastUpdated: ride.queueTimes[0].lastUpdated,
+        }
+      : null;
+
+    return {
+      id: ride.id,
+      name: ride.name,
+      isActive: ride.isActive,
+      park: ride.park,
+      themeArea: ride.themeArea,
+      currentQueueTime,
+    };
   }
 }
