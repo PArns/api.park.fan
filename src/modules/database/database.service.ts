@@ -28,7 +28,10 @@ export class DatabaseService {
       this.logger.log('Connected to PostgreSQL');
 
       // Check if database exists
-      const result = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
+      const result = await client.query(
+        'SELECT 1 FROM pg_database WHERE datname = $1',
+        [dbName],
+      );
 
       if (result.rows.length === 0) {
         // Database doesn't exist, create it

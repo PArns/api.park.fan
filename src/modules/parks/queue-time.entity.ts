@@ -1,4 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, CreateDateColumn, Index } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  CreateDateColumn,
+  Index,
+} from 'typeorm';
 import { Ride } from './ride.entity.js';
 
 @Entity()
@@ -8,7 +15,9 @@ export class QueueTime {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @ManyToOne(() => Ride, (ride: Ride) => ride.queueTimes, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Ride, (ride: Ride) => ride.queueTimes, {
+    onDelete: 'CASCADE',
+  })
   ride: Ride;
 
   @Column('int')

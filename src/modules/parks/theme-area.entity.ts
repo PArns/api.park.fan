@@ -1,4 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, Unique } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  OneToMany,
+  Unique,
+} from 'typeorm';
 import { Park } from './park.entity.js';
 import { Ride } from './ride.entity.js';
 
@@ -14,7 +21,9 @@ export class ThemeArea {
   @Column()
   name: string; // e.g., "Coasters", "Family rides", "Thrill rides"
 
-  @ManyToOne(() => Park, (park: Park) => park.themeAreas, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Park, (park: Park) => park.themeAreas, {
+    onDelete: 'CASCADE',
+  })
   park: Park;
 
   @OneToMany(() => Ride, (ride: Ride) => ride.themeArea)

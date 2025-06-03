@@ -35,7 +35,7 @@ export class QueueTimesParserService {
       for (const groupData of groups) {
         // Create or update park group
         let parkGroup = await this.parkGroupRepository.findOne({
-          where: { queueTimesId: groupData.id }
+          where: { queueTimesId: groupData.id },
         });
 
         if (!parkGroup) {
@@ -48,16 +48,19 @@ export class QueueTimesParserService {
 
         // Process parks within this group
         for (const parkData of groupData.parks) {
-          await this.parkRepository.upsert({
-            queueTimesId: parkData.id,
-            name: parkData.name,
-            country: parkData.country,
-            continent: parkData.continent,
-            latitude: parkData.latitude,
-            longitude: parkData.longitude,
-            timezone: parkData.timezone,
-            parkGroup: parkGroup,
-          }, ['queueTimesId']);
+          await this.parkRepository.upsert(
+            {
+              queueTimesId: parkData.id,
+              name: parkData.name,
+              country: parkData.country,
+              continent: parkData.continent,
+              latitude: parkData.latitude,
+              longitude: parkData.longitude,
+              timezone: parkData.timezone,
+              parkGroup: parkGroup,
+            },
+            ['queueTimesId'],
+          );
         }
       }
 
@@ -76,7 +79,7 @@ export class QueueTimesParserService {
       try {
         const url = `https://queue-times.com/parks/${park.queueTimesId}/queue_times.json`;
         this.logger.debug(`Fetching queue times from ${url}`);
-        
+
         const response = await axios.get(url);
         const data = response.data;
         const lands = data.lands || [];
@@ -84,7 +87,7 @@ export class QueueTimesParserService {
         for (const landData of lands) {
           // Create or update theme area
           let themeArea = await this.themeAreaRepository.findOne({
-            where: { queueTimesId: landData.id, park: { id: park.id } }
+            where: { queueTimesId: landData.id, park: { id: park.id } },
           });
 
           if (!themeArea) {
@@ -100,7 +103,7 @@ export class QueueTimesParserService {
           for (const rideData of landData.rides) {
             // Create or update ride
             let ride = await this.rideRepository.findOne({
-              where: { queueTimesId: rideData.id, park: { id: park.id } }
+              where: { queueTimesId: rideData.id, park: { id: park.id } },
             });
 
             if (!ride) {
@@ -119,7 +122,9 @@ export class QueueTimesParserService {
                 ride: ride,
                 waitTime: rideData.wait_time,
                 isOpen: rideData.is_open,
-                lastUpdated: rideData.last_updated ? new Date(rideData.last_updated) : new Date(),
+                lastUpdated: rideData.last_updated
+                  ? new Date(rideData.last_updated)
+                  : new Date(),
                 recordedAt: new Date(),
               });
 
@@ -128,9 +133,13 @@ export class QueueTimesParserService {
           }
         }
 
-        this.logger.debug(`Successfully processed queue times for park: ${park.name}`);
+        this.logger.debug(
+          `Successfully processed queue times for park: ${park.name}`,
+        );
       } catch (error) {
-        this.logger.warn(`Failed to fetch queue times for park ${park.name}: ${error.message}`);
+        this.logger.warn(
+          `Failed to fetch queue times for park ${park.name}: ${error.message}`,
+        );
         // Continue processing other parks even if one fails
       }
     }

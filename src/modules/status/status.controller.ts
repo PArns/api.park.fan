@@ -9,4 +9,4 @@ export class StatusController {
   getStatus(): { status: string } {
     return this.statusService.getStatus();
   }
-} 
+}

@@ -6,7 +6,8 @@ import { QueueTimesParserService } from './queue-times-parser.service';
 export class QueueTimesScheduler implements OnModuleInit {
   private readonly logger = new Logger(QueueTimesScheduler.name);
 
-  constructor(private readonly parser: QueueTimesParserService) {}  async onModuleInit() {
+  constructor(private readonly parser: QueueTimesParserService) {}
+  async onModuleInit() {
     // Wait a bit for TypeORM to be ready, then start initial data fetch
     setTimeout(() => {
       this.performInitialDataFetch();
@@ -18,13 +19,13 @@ export class QueueTimesScheduler implements OnModuleInit {
     try {
       // Check if database is ready by testing a simple query
       await this.waitForDatabase();
-      
+
       await this.parser.fetchAndStoreParks();
       this.logger.log('Initial parks fetch completed');
-      
+
       // Wait a moment before fetching queue times
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
       await this.parser.fetchAndStoreQueueTimes();
       this.logger.log('Initial queue times fetch completed');
     } catch (error) {
@@ -40,7 +41,7 @@ export class QueueTimesScheduler implements OnModuleInit {
   private async waitForDatabase(): Promise<void> {
     const maxRetries = 10;
     let retries = 0;
-    
+
     while (retries < maxRetries) {
       try {
         // Try a simple database operation to check if connection is ready
@@ -49,11 +50,13 @@ export class QueueTimesScheduler implements OnModuleInit {
         return;
       } catch (error) {
         retries++;
-        this.logger.log(`Database not ready yet, retry ${retries}/${maxRetries}`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        this.logger.log(
+          `Database not ready yet, retry ${retries}/${maxRetries}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
-    
+
     throw new Error('Database connection timeout after maximum retries');
   }
 

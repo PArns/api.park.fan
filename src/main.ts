@@ -5,7 +5,7 @@ import { Client } from 'pg';
 
 async function createDatabaseIfNotExists() {
   const logger = new Logger('DatabaseSetup');
-  
+
   // Load environment variables manually
   const dbHost = process.env.DB_HOST || 'localhost';
   const dbPort = parseInt(process.env.DB_PORT || '5432');
@@ -26,7 +26,10 @@ async function createDatabaseIfNotExists() {
     logger.log('Connected to PostgreSQL server');
 
     // Check if database exists
-    const result = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
+    const result = await client.query(
+      'SELECT 1 FROM pg_database WHERE datname = $1',
+      [dbName],
+    );
 
     if (result.rows.length === 0) {
       // Database doesn't exist, create it
@@ -45,14 +48,14 @@ async function createDatabaseIfNotExists() {
 
 async function bootstrap(): Promise<void> {
   const logger = new Logger('Bootstrap');
-  
+
   // Create database BEFORE starting the NestJS app
   await createDatabaseIfNotExists();
-  
+
   // Now start the app - TypeORM can now connect successfully
   const app = await NestFactory.create(AppModule);
   const port = process.env.PORT || 3000;
-  
+
   await app.listen(port);
   logger.log(`🚀 API server is running on http://localhost:${port}`);
 }

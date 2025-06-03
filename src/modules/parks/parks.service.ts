@@ -32,32 +32,43 @@ export class ParksService {
       continent,
       parkGroupId,
       page = 1,
-      limit = 10
+      limit = 10,
     } = query;
-
-    const queryBuilder = this.parkRepository.createQueryBuilder('park')
+    const queryBuilder = this.parkRepository
+      .createQueryBuilder('park')
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')
       .leftJoinAndSelect('park.themeAreas', 'themeAreas')
-      .leftJoinAndSelect('themeAreas.rides', 'rides');
+      .leftJoinAndSelect('themeAreas.rides', 'rides')
+      .leftJoinAndSelect(
+        'rides.queueTimes',
+        'queueTimes',
+        'queueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = rides.id)',
+      );
 
     // Apply filters
     if (search) {
       queryBuilder.andWhere(
         '(LOWER(park.name) LIKE LOWER(:search) OR LOWER(park.country) LIKE LOWER(:search))',
-        { search: `%${search}%` }
+        { search: `%${search}%` },
       );
     }
 
     if (country) {
-      queryBuilder.andWhere('LOWER(park.country) = LOWER(:country)', { country });
+      queryBuilder.andWhere('LOWER(park.country) = LOWER(:country)', {
+        country,
+      });
     }
 
     if (continent) {
-      queryBuilder.andWhere('LOWER(park.continent) = LOWER(:continent)', { continent });
+      queryBuilder.andWhere('LOWER(park.continent) = LOWER(:continent)', {
+        continent,
+      });
     }
 
     if (parkGroupId) {
-      queryBuilder.andWhere('park.parkGroup.id = :parkGroupId', { parkGroupId });
+      queryBuilder.andWhere('park.parkGroup.id = :parkGroupId', {
+        parkGroupId,
+      });
     }
 
     // Apply pagination
@@ -65,44 +76,75 @@ export class ParksService {
     queryBuilder.skip(offset).take(limit);
 
     // Order by name
-    queryBuilder.orderBy('park.name', 'ASC');
-
-    // Get total count for pagination
+    queryBuilder.orderBy('park.name', 'ASC'); // Get total count for pagination
     const totalCount = await queryBuilder.getCount();
     const parks = await queryBuilder.getMany();
 
+    // Transform the data to include current queue time
+    const transformedParks = parks.map((park) => ({
+      ...park,
+      themeAreas: park.themeAreas.map((themeArea) => ({
+        ...themeArea,
+        rides: themeArea.rides.map((ride) => ({
+          ...ride,
+          currentQueueTime:
+            ride.queueTimes && ride.queueTimes.length > 0
+              ? ride.queueTimes[0]
+              : null,
+          queueTimes: undefined, // Remove the full queueTimes array from response
+        })),
+      })),
+    }));
     return {
-      data: parks,
+      data: transformedParks,
       pagination: {
         page,
         limit,
         totalCount,
         totalPages: Math.ceil(totalCount / limit),
         hasNext: page * limit < totalCount,
-        hasPrev: page > 1
-      }
+        hasPrev: page > 1,
+      },
     };
   }
-
   /**
    * Get a single park by ID
    */
-  async findOne(id: number): Promise<Park> {
-    const park = await this.parkRepository.findOne({
-      where: { id },
-      relations: {
-        parkGroup: true,
-        themeAreas: {
-          rides: true
-        }
-      }
-    });
+  async findOne(id: number): Promise<any> {
+    const park = await this.parkRepository
+      .createQueryBuilder('park')
+      .leftJoinAndSelect('park.parkGroup', 'parkGroup')
+      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
+      .leftJoinAndSelect('themeAreas.rides', 'rides')
+      .leftJoinAndSelect(
+        'rides.queueTimes',
+        'queueTimes',
+        'queueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = rides.id)',
+      )
+      .where('park.id = :id', { id })
+      .getOne();
 
     if (!park) {
       throw new NotFoundException(`Park with ID ${id} not found`);
     }
 
-    return park;
+    // Transform the data to include current queue time
+    const transformedPark = {
+      ...park,
+      themeAreas: park.themeAreas.map((themeArea) => ({
+        ...themeArea,
+        rides: themeArea.rides.map((ride) => ({
+          ...ride,
+          currentQueueTime:
+            ride.queueTimes && ride.queueTimes.length > 0
+              ? ride.queueTimes[0]
+              : null,
+          queueTimes: undefined, // Remove the full queueTimes array from response
+        })),
+      })),
+    };
+
+    return transformedPark;
   }
 
   /**
@@ -114,18 +156,19 @@ export class ParksService {
       relations: {
         parkGroup: true,
         themeAreas: {
-          rides: true
-        }
-      }
+          rides: true,
+        },
+      },
     });
 
     if (!park) {
-      throw new NotFoundException(`Park with queueTimesId ${queueTimesId} not found`);
+      throw new NotFoundException(
+        `Park with queueTimesId ${queueTimesId} not found`,
+      );
     }
 
     return park;
   }
-
 
   /**
    * Get park statistics
@@ -155,14 +198,14 @@ export class ParksService {
       totalParks,
       totalThemeAreas,
       totalRides,
-      parksByCountry: parksByCountry.map(item => ({
+      parksByCountry: parksByCountry.map((item) => ({
         country: item.country,
-        count: parseInt(item.count)
+        count: parseInt(item.count),
       })),
-      parksByContinent: parksByContinent.map(item => ({
+      parksByContinent: parksByContinent.map((item) => ({
         continent: item.continent,
-        count: parseInt(item.count)
-      }))
+        count: parseInt(item.count),
+      })),
     };
   }
 
@@ -176,7 +219,7 @@ export class ParksService {
       .orderBy('park.country', 'ASC')
       .getRawMany();
 
-    return result.map(item => item.country).filter(Boolean);
+    return result.map((item) => item.country).filter(Boolean);
   }
 
   /**
@@ -189,6 +232,6 @@ export class ParksService {
       .orderBy('park.continent', 'ASC')
       .getRawMany();
 
-    return result.map(item => item.continent).filter(Boolean);
+    return result.map((item) => item.continent).filter(Boolean);
   }
 }

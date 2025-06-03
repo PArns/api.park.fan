@@ -1,4 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, Unique } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  OneToMany,
+  Unique,
+} from 'typeorm';
 import { Park } from './park.entity.js';
 import { ThemeArea } from './theme-area.entity.js';
 import { QueueTime } from './queue-time.entity.js';
@@ -21,7 +28,10 @@ export class Ride {
   @ManyToOne(() => Park, (park: Park) => park.rides, { onDelete: 'CASCADE' })
   park: Park;
 
-  @ManyToOne(() => ThemeArea, (themeArea: ThemeArea) => themeArea.rides, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => ThemeArea, (themeArea: ThemeArea) => themeArea.rides, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
   themeArea: ThemeArea | null; // Optional - ride can exist without being assigned to a theme area
 
   @OneToMany(() => QueueTime, (queueTime: QueueTime) => queueTime.ride)

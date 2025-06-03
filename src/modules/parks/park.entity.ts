@@ -1,4 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToOne } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  OneToMany,
+  ManyToOne,
+} from 'typeorm';
 import { ParkGroup } from './park-group.entity.js';
 import { ThemeArea } from './theme-area.entity.js';
 import { Ride } from './ride.entity.js';
@@ -29,7 +35,9 @@ export class Park {
   @Column()
   timezone: string;
 
-  @ManyToOne(() => ParkGroup, (parkGroup: ParkGroup) => parkGroup.parks, { onDelete: 'CASCADE' })
+  @ManyToOne(() => ParkGroup, (parkGroup: ParkGroup) => parkGroup.parks, {
+    onDelete: 'CASCADE',
+  })
   parkGroup: ParkGroup;
 
   @OneToMany(() => ThemeArea, (themeArea: ThemeArea) => themeArea.park)

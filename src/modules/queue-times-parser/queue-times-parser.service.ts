@@ -35,7 +35,7 @@ export class QueueTimesParserService {
       for (const groupData of groups) {
         // Create or update park group
         let parkGroup = await this.parkGroupRepository.findOne({
-          where: { queueTimesId: groupData.id }
+          where: { queueTimesId: groupData.id },
         });
 
         if (!parkGroup) {
@@ -48,16 +48,19 @@ export class QueueTimesParserService {
 
         // Process parks within this group
         for (const parkData of groupData.parks) {
-          await this.parkRepository.upsert({
-            queueTimesId: parkData.id,
-            name: parkData.name,
-            country: parkData.country,
-            continent: parkData.continent,
-            latitude: parkData.latitude,
-            longitude: parkData.longitude,
-            timezone: parkData.timezone,
-            parkGroup: parkGroup,
-          }, ['queueTimesId']);
+          await this.parkRepository.upsert(
+            {
+              queueTimesId: parkData.id,
+              name: parkData.name,
+              country: parkData.country,
+              continent: parkData.continent,
+              latitude: parkData.latitude,
+              longitude: parkData.longitude,
+              timezone: parkData.timezone,
+              parkGroup: parkGroup,
+            },
+            ['queueTimesId'],
+          );
         }
       }
 
@@ -70,7 +73,7 @@ export class QueueTimesParserService {
   async fetchAndStoreQueueTimes(): Promise<void> {
     const parks = await this.parkRepository.find();
     this.logger.log(`Processing queue times for ${parks.length} parks`);
-    
+
     let totalNewEntries = 0;
     let totalSkippedEntries = 0;
     let totalProcessedParks = 0;
@@ -79,17 +82,18 @@ export class QueueTimesParserService {
       try {
         const url = `https://queue-times.com/parks/${park.queueTimesId}/queue_times.json`;
         this.logger.debug(`Fetching queue times from ${url}`);
-        
+
         const response = await axios.get(url);
         const data = response.data;
         const lands = data.lands || [];
 
         let parkNewEntries = 0;
-        let parkSkippedEntries = 0;        for (const landData of lands) {
+        let parkSkippedEntries = 0;
+        for (const landData of lands) {
           try {
             // Create or update theme area
             let themeArea = await this.themeAreaRepository.findOne({
-              where: { queueTimesId: landData.id, park: { id: park.id } }
+              where: { queueTimesId: landData.id, park: { id: park.id } },
             });
 
             if (!themeArea) {
@@ -102,13 +106,20 @@ export class QueueTimesParserService {
                 await this.themeAreaRepository.save(themeArea);
               } catch (themeAreaError) {
                 // Handle potential unique constraint violations for theme areas
-                if (themeAreaError.code === '23505' || themeAreaError.message.includes('duplicate key value violates unique constraint')) {
+                if (
+                  themeAreaError.code === '23505' ||
+                  themeAreaError.message.includes(
+                    'duplicate key value violates unique constraint',
+                  )
+                ) {
                   // Try to find the existing theme area again
                   themeArea = await this.themeAreaRepository.findOne({
-                    where: { queueTimesId: landData.id, park: { id: park.id } }
+                    where: { queueTimesId: landData.id, park: { id: park.id } },
                   });
                   if (!themeArea) {
-                    this.logger.warn(`Could not create or find theme area ${landData.name} for park ${park.name}`);
+                    this.logger.warn(
+                      `Could not create or find theme area ${landData.name} for park ${park.name}`,
+                    );
                     continue; // Skip this theme area
                   }
                 } else {
@@ -122,7 +133,7 @@ export class QueueTimesParserService {
               try {
                 // Create or update ride
                 let ride = await this.rideRepository.findOne({
-                  where: { queueTimesId: rideData.id, park: { id: park.id } }
+                  where: { queueTimesId: rideData.id, park: { id: park.id } },
                 });
 
                 if (!ride) {
@@ -136,13 +147,23 @@ export class QueueTimesParserService {
                     await this.rideRepository.save(ride);
                   } catch (rideError) {
                     // Handle potential unique constraint violations for rides
-                    if (rideError.code === '23505' || rideError.message.includes('duplicate key value violates unique constraint')) {
+                    if (
+                      rideError.code === '23505' ||
+                      rideError.message.includes(
+                        'duplicate key value violates unique constraint',
+                      )
+                    ) {
                       // Try to find the existing ride again
                       ride = await this.rideRepository.findOne({
-                        where: { queueTimesId: rideData.id, park: { id: park.id } }
+                        where: {
+                          queueTimesId: rideData.id,
+                          park: { id: park.id },
+                        },
                       });
                       if (!ride) {
-                        this.logger.warn(`Could not create or find ride ${rideData.name} for park ${park.name}`);
+                        this.logger.warn(
+                          `Could not create or find ride ${rideData.name} for park ${park.name}`,
+                        );
                         continue; // Skip this ride
                       }
                     } else {
@@ -152,20 +173,26 @@ export class QueueTimesParserService {
                 }
 
                 // Store queue time data only if ride is open and has valid wait time
-                if (rideData.is_open && typeof rideData.wait_time === 'number') {
-                  const lastUpdatedTime = rideData.last_updated ? new Date(rideData.last_updated) : new Date();
-                  
+                if (
+                  rideData.is_open &&
+                  typeof rideData.wait_time === 'number'
+                ) {
+                  const lastUpdatedTime = rideData.last_updated
+                    ? new Date(rideData.last_updated)
+                    : new Date();
+
                   try {
                     // Check if we already have a queue time entry with the same lastUpdated timestamp and wait time
                     // This prevents duplicate entries even if the API returns the same data multiple times
-                    const existingQueueTime = await this.queueTimeRepository.findOne({
-                      where: { 
-                        ride: { id: ride.id },
-                        lastUpdated: lastUpdatedTime,
-                        waitTime: rideData.wait_time
-                      },
-                      order: { recordedAt: 'DESC' }
-                    });
+                    const existingQueueTime =
+                      await this.queueTimeRepository.findOne({
+                        where: {
+                          ride: { id: ride.id },
+                          lastUpdated: lastUpdatedTime,
+                          waitTime: rideData.wait_time,
+                        },
+                        order: { recordedAt: 'DESC' },
+                      });
 
                     // Only save if we don't have this exact data already
                     if (!existingQueueTime) {
@@ -179,42 +206,66 @@ export class QueueTimesParserService {
 
                       await this.queueTimeRepository.save(queueTime);
                       parkNewEntries++;
-                      this.logger.debug(`Saved new queue time for ${ride.name}: ${rideData.wait_time}min (updated: ${lastUpdatedTime.toISOString()})`);
+                      this.logger.debug(
+                        `Saved new queue time for ${ride.name}: ${rideData.wait_time}min (updated: ${lastUpdatedTime.toISOString()})`,
+                      );
                     } else {
                       parkSkippedEntries++;
-                      this.logger.debug(`Skipped queue time for ${ride.name}: duplicate data (${rideData.wait_time}min at ${lastUpdatedTime.toISOString()})`);
+                      this.logger.debug(
+                        `Skipped queue time for ${ride.name}: duplicate data (${rideData.wait_time}min at ${lastUpdatedTime.toISOString()})`,
+                      );
                     }
                   } catch (error) {
                     // Handle unique constraint violations gracefully
-                    if (error.code === '23505' || error.message.includes('duplicate key value violates unique constraint')) {
+                    if (
+                      error.code === '23505' ||
+                      error.message.includes(
+                        'duplicate key value violates unique constraint',
+                      )
+                    ) {
                       parkSkippedEntries++;
-                      this.logger.debug(`Skipped queue time for ${ride.name}: duplicate detected at database level (${rideData.wait_time}min at ${lastUpdatedTime.toISOString()})`);
+                      this.logger.debug(
+                        `Skipped queue time for ${ride.name}: duplicate detected at database level (${rideData.wait_time}min at ${lastUpdatedTime.toISOString()})`,
+                      );
                     } else {
-                      this.logger.warn(`Error saving queue time for ${ride.name}: ${error.message}`);
+                      this.logger.warn(
+                        `Error saving queue time for ${ride.name}: ${error.message}`,
+                      );
                     }
                   }
                 }
               } catch (rideProcessingError) {
-                this.logger.warn(`Error processing ride ${rideData.name} in park ${park.name}: ${rideProcessingError.message}`);
+                this.logger.warn(
+                  `Error processing ride ${rideData.name} in park ${park.name}: ${rideProcessingError.message}`,
+                );
                 // Continue with next ride
               }
             }
           } catch (landProcessingError) {
-            this.logger.warn(`Error processing theme area ${landData.name} in park ${park.name}: ${landProcessingError.message}`);
+            this.logger.warn(
+              `Error processing theme area ${landData.name} in park ${park.name}: ${landProcessingError.message}`,
+            );
             // Continue with next theme area
           }
-        }totalNewEntries += parkNewEntries;
+        }
+        totalNewEntries += parkNewEntries;
         totalSkippedEntries += parkSkippedEntries;
         totalProcessedParks++;
-        
-        this.logger.debug(`Successfully processed queue times for park: ${park.name} (${parkNewEntries} new, ${parkSkippedEntries} skipped)`);
+
+        this.logger.debug(
+          `Successfully processed queue times for park: ${park.name} (${parkNewEntries} new, ${parkSkippedEntries} skipped)`,
+        );
       } catch (error) {
-        this.logger.warn(`Failed to fetch queue times for park ${park.name}: ${error.message}`);
+        this.logger.warn(
+          `Failed to fetch queue times for park ${park.name}: ${error.message}`,
+        );
         // Continue processing other parks even if one fails
       }
     }
 
-    this.logger.log(`Queue times update completed: ${totalProcessedParks} parks processed, ${totalNewEntries} new entries, ${totalSkippedEntries} skipped (no new data)`);
+    this.logger.log(
+      `Queue times update completed: ${totalProcessedParks} parks processed, ${totalNewEntries} new entries, ${totalSkippedEntries} skipped (no new data)`,
+    );
   }
 
   /**
@@ -223,18 +274,25 @@ export class QueueTimesParserService {
    * @param timestamps Array of timestamps to check
    * @returns Set of existing timestamps
    */
-  private async getExistingQueueTimeTimestamps(rideId: number, timestamps: Date[]): Promise<Set<string>> {
+  private async getExistingQueueTimeTimestamps(
+    rideId: number,
+    timestamps: Date[],
+  ): Promise<Set<string>> {
     if (timestamps.length === 0) return new Set();
-    
+
     const existingTimes = await this.queueTimeRepository.find({
-      where: { 
+      where: {
         ride: { id: rideId },
-        lastUpdated: timestamps.length === 1 ? timestamps[0] : undefined
+        lastUpdated: timestamps.length === 1 ? timestamps[0] : undefined,
       },
-      select: ['lastUpdated', 'waitTime']
+      select: ['lastUpdated', 'waitTime'],
     });
-    
-    return new Set(existingTimes.map(qt => `${qt.lastUpdated.toISOString()}_${qt.waitTime}`));
+
+    return new Set(
+      existingTimes.map(
+        (qt) => `${qt.lastUpdated.toISOString()}_${qt.waitTime}`,
+      ),
+    );
   }
 
   /**
@@ -248,12 +306,12 @@ export class QueueTimesParserService {
     entriesPerRide: { rideName: string; count: number }[];
   }> {
     const totalEntries = await this.queueTimeRepository.count();
-    
+
     const uniqueTimestamps = await this.queueTimeRepository
       .createQueryBuilder('qt')
       .select('COUNT(DISTINCT qt.lastUpdated)', 'count')
       .getRawOne();
-    
+
     const entriesPerRide = await this.queueTimeRepository
       .createQueryBuilder('qt')
       .leftJoin('qt.ride', 'ride')
@@ -263,19 +321,21 @@ export class QueueTimesParserService {
       .orderBy('count', 'DESC')
       .limit(10)
       .getRawMany();
-    
-    const duplicatePreventionRate = totalEntries > 0 
-      ? ((totalEntries - parseInt(uniqueTimestamps.count)) / totalEntries) * 100 
-      : 0;
-    
+
+    const duplicatePreventionRate =
+      totalEntries > 0
+        ? ((totalEntries - parseInt(uniqueTimestamps.count)) / totalEntries) *
+          100
+        : 0;
+
     return {
       totalEntries,
       uniqueTimestamps: parseInt(uniqueTimestamps.count),
       duplicatePreventionRate: Math.round(duplicatePreventionRate * 100) / 100,
-      entriesPerRide: entriesPerRide.map(item => ({
+      entriesPerRide: entriesPerRide.map((item) => ({
         rideName: item.rideName,
-        count: parseInt(item.count)
-      }))
+        count: parseInt(item.count),
+      })),
     };
   }
 
@@ -285,13 +345,14 @@ export class QueueTimesParserService {
    */
   async cleanupDuplicateQueueTimes(): Promise<{ removedCount: number }> {
     this.logger.log('Starting cleanup of duplicate queue time entries...');
-    
+
     // Find duplicates based on ride, lastUpdated, and waitTime
     const duplicates = await this.queueTimeRepository
       .createQueryBuilder('qt1')
       .select('qt1.id')
-      .where(qb => {
-        const subQuery = qb.subQuery()
+      .where((qb) => {
+        const subQuery = qb
+          .subQuery()
           .select('MIN(qt2.id)')
           .from(QueueTime, 'qt2')
           .where('qt2.ride = qt1.ride')
@@ -301,15 +362,17 @@ export class QueueTimesParserService {
         return 'qt1.id != (' + subQuery + ')';
       })
       .getMany();
-    
+
     if (duplicates.length > 0) {
-      const duplicateIds = duplicates.map(d => d.id);
+      const duplicateIds = duplicates.map((d) => d.id);
       await this.queueTimeRepository.delete(duplicateIds);
-      this.logger.log(`Removed ${duplicates.length} duplicate queue time entries`);
+      this.logger.log(
+        `Removed ${duplicates.length} duplicate queue time entries`,
+      );
     } else {
       this.logger.log('No duplicate queue time entries found');
     }
-    
+
     return { removedCount: duplicates.length };
   }
 }
