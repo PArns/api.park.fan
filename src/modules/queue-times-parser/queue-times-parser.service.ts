@@ -130,115 +130,14 @@ export class QueueTimesParserService {
 
             // Process rides within this theme area
             for (const rideData of landData.rides) {
-              try {
-                // Find existing ride or create new one using upsert approach
-                const rideExists = await this.rideRepository.findOne({
-                  where: { queueTimesId: rideData.id, park: { id: park.id } },
-                  relations: ['themeArea', 'park'],
-                });
-
-                let ride;
-                if (!rideExists) {
-                  try {
-                    // Use upsert to handle potential race conditions
-                    await this.rideRepository.upsert(
-                      {
-                        queueTimesId: rideData.id,
-                        name: rideData.name,
-                        park: { id: park.id } as Park,
-                        themeArea: { id: themeArea.id } as ThemeArea,
-                        isActive: true,
-                      },
-                      ['queueTimesId', 'park'],
-                    );
-                    
-                    // Fetch the ride again after upsert
-                    ride = await this.rideRepository.findOne({
-                      where: { queueTimesId: rideData.id, park: { id: park.id } },
-                      relations: ['themeArea', 'park'],
-                    });
-                  } catch (rideError) {
-                    this.logger.warn(
-                      `Error upserting ride ${rideData.name} for park ${park.name}: ${rideError.message}`,
-                    );
-                    continue;
-                  }
-                } else {
-                  ride = rideExists;
-                }
-
-                if (!ride) {
-                  this.logger.warn(
-                    `Could not create or find ride ${rideData.name} for park ${park.name}`,
-                  );
-                  continue;
-                }
-
-                // Store queue time data only if it has valid wait time
-                if (typeof rideData.wait_time === 'number') {
-                  const lastUpdatedTime = rideData.last_updated
-                    ? new Date(rideData.last_updated)
-                    : new Date();
-
-                  try {
-                    // Check if we already have a queue time entry with the same lastUpdated timestamp and wait time
-                    // This prevents duplicate entries even if the API returns the same data multiple times
-                    const existingQueueTime =
-                      await this.queueTimeRepository.findOne({
-                        where: {
-                          ride: { id: ride.id },
-                          lastUpdated: lastUpdatedTime,
-                          waitTime: rideData.wait_time,
-                        },
-                        order: { recordedAt: 'DESC' },
-                      });
-
-                    // Only save if we don't have this exact data already
-                    if (!existingQueueTime) {
-                      const queueTime = this.queueTimeRepository.create({
-                        ride: ride,
-                        waitTime: rideData.wait_time,
-                        isOpen: rideData.is_open,
-                        lastUpdated: lastUpdatedTime,
-                        recordedAt: new Date(),
-                      });
-
-                      await this.queueTimeRepository.save(queueTime);
-                      parkNewEntries++;
-                      this.logger.debug(
-                        `Saved new queue time for ${ride.name}: ${rideData.wait_time}min (updated: ${lastUpdatedTime.toISOString()})`,
-                      );
-                    } else {
-                      parkSkippedEntries++;
-                      this.logger.debug(
-                        `Skipped queue time for ${ride.name}: duplicate data (${rideData.wait_time}min at ${lastUpdatedTime.toISOString()})`,
-                      );
-                    }
-                  } catch (error) {
-                    // Handle unique constraint violations gracefully
-                    if (
-                      error.code === '23505' ||
-                      error.message.includes(
-                        'duplicate key value violates unique constraint',
-                      )
-                    ) {
-                      parkSkippedEntries++;
-                      this.logger.debug(
-                        `Skipped queue time for ${ride.name}: duplicate detected at database level (${rideData.wait_time}min at ${lastUpdatedTime.toISOString()})`,
-                      );
-                    } else {
-                      this.logger.warn(
-                        `Error saving queue time for ${ride.name}: ${error.message}`,
-                      );
-                    }
-                  }
-                }
-              } catch (rideProcessingError) {
-                this.logger.warn(
-                  `Error processing ride ${rideData.name} in park ${park.name}: ${rideProcessingError.message}`,
-                );
-                // Continue with next ride
-              }
+              const result = await this.processRide(
+                rideData,
+                park,
+                themeArea,
+                false, // not a direct ride
+              );
+              parkNewEntries += result.newEntries;
+              parkSkippedEntries += result.skippedEntries;
             }
           } catch (landProcessingError) {
             this.logger.warn(
@@ -295,110 +194,14 @@ export class QueueTimesParserService {
 
           // Process each direct ride
           for (const rideData of directRides) {
-            try {
-              // Find existing ride or create new one using upsert approach
-              const rideExists = await this.rideRepository.findOne({
-                where: { queueTimesId: rideData.id, park: { id: park.id } },
-                relations: ['themeArea', 'park'],
-              });
-
-              let ride;
-              if (!rideExists) {
-                try {
-                  // Use upsert to handle potential race conditions
-                  await this.rideRepository.upsert(
-                    {
-                      queueTimesId: rideData.id,
-                      name: rideData.name,
-                      park: { id: park.id } as Park,
-                      themeArea: { id: defaultThemeArea.id } as ThemeArea,
-                      isActive: true,
-                    },
-                    ['queueTimesId', 'park'],
-                  );
-                  
-                  // Fetch the ride again after upsert
-                  ride = await this.rideRepository.findOne({
-                    where: { queueTimesId: rideData.id, park: { id: park.id } },
-                    relations: ['themeArea', 'park'],
-                  });
-                } catch (rideError) {
-                  this.logger.warn(
-                    `Error upserting direct ride ${rideData.name} for park ${park.name}: ${rideError.message}`,
-                  );
-                  continue;
-                }
-              } else {
-                ride = rideExists;
-              }
-
-              if (!ride) {
-                this.logger.warn(
-                  `Could not create or find direct ride ${rideData.name} for park ${park.name}`,
-                );
-                continue;
-              }
-
-              if (typeof rideData.wait_time === 'number') {
-                const lastUpdatedTime = rideData.last_updated
-                  ? new Date(rideData.last_updated)
-                  : new Date();
-
-                try {
-                  const existingQueueTime = await this.queueTimeRepository.findOne({
-                    where: {
-                      ride: { id: ride.id },
-                      lastUpdated: lastUpdatedTime,
-                      waitTime: rideData.wait_time,
-                    },
-                    order: { recordedAt: 'DESC' },
-                  });
-
-                  if (!existingQueueTime) {
-                    const queueTime = this.queueTimeRepository.create({
-                      ride: ride,
-                      waitTime: rideData.wait_time,
-                      isOpen: rideData.is_open,
-                      lastUpdated: lastUpdatedTime,
-                      recordedAt: new Date(),
-                    });
-
-                    await this.queueTimeRepository.save(queueTime);
-                    parkNewEntries++;
-                    this.logger.debug(
-                      `Saved new queue time for direct ride ${ride.name}: ${rideData.wait_time}min (updated: ${lastUpdatedTime.toISOString()})`,
-                    );
-                  } else {
-                    parkSkippedEntries++;
-                    this.logger.debug(
-                      `Skipped queue time for direct ride ${ride.name}: duplicate data (${rideData.wait_time}min at ${lastUpdatedTime.toISOString()})`,
-                    );
-                  }
-                } catch (error) {
-                  if (
-                    error.code === '23505' ||
-                    error.message.includes('duplicate key value violates unique constraint')
-                  ) {
-                    parkSkippedEntries++;
-                    this.logger.debug(
-                      `Skipped queue time for direct ride ${ride.name}: duplicate detected at database level (${rideData.wait_time}min at ${lastUpdatedTime.toISOString()})`,
-                    );
-                  } else {
-                    this.logger.warn(
-                      `Error saving queue time for direct ride ${ride.name}: ${error.message}`,
-                    );
-                  }
-                }
-              }
-            } catch (rideProcessingError) {
-              this.logger.warn(
-                `Error processing direct ride ${rideData.name} in park ${park.name}: ${rideProcessingError.message}`,
-              );
-              this.logger.debug(
-                `Error details - Park ID: ${park.id}, Ride Queue Times ID: ${rideData.id}, Last Updated: ${rideData.last_updated}`,
-              );
-              this.logger.debug(`Full error stack: ${rideProcessingError.stack}`);
-            }
+            const result = await this.processRide(
+              rideData,
+              park,
+              defaultThemeArea,
+              true, // is a direct ride
+            );
+            parkNewEntries += result.newEntries;
+            parkSkippedEntries += result.skippedEntries;
           }
         }
 
@@ -491,6 +294,128 @@ export class QueueTimesParserService {
         count: parseInt(item.count),
       })),
     };
+  }
+
+  /**
+   * Process a single ride and its queue time data
+   * @param rideData The ride data from the API
+   * @param park The park entity
+   * @param themeArea The theme area entity
+   * @param isDirectRide Whether this is a direct ride or within a theme area
+   * @returns Object with newEntries and skippedEntries counts
+   */
+  private async processRide(
+    rideData: any,
+    park: Park,
+    themeArea: ThemeArea,
+    isDirectRide: boolean,
+  ): Promise<{ newEntries: number; skippedEntries: number }> {
+    let newEntries = 0;
+    let skippedEntries = 0;
+
+    try {
+      // Find existing ride or create new one using upsert approach
+      const rideExists = await this.rideRepository.findOne({
+        where: { queueTimesId: rideData.id, park: { id: park.id } },
+        relations: ['themeArea', 'park'],
+      });
+
+      let ride;
+      if (!rideExists) {
+        try {
+          // Use upsert to handle potential race conditions
+          await this.rideRepository.upsert(
+            {
+              queueTimesId: rideData.id,
+              name: rideData.name,
+              park: { id: park.id } as Park,
+              themeArea: { id: themeArea.id } as ThemeArea,
+              isActive: true,
+            },
+            ['queueTimesId', 'park'],
+          );
+          
+          // Fetch the ride again after upsert
+          ride = await this.rideRepository.findOne({
+            where: { queueTimesId: rideData.id, park: { id: park.id } },
+            relations: ['themeArea', 'park'],
+          });
+        } catch (rideError) {
+          this.logger.warn(
+            `Error upserting ${isDirectRide ? 'direct ' : ''}ride ${rideData.name} for park ${park.name}: ${rideError.message}`,
+          );
+          return { newEntries, skippedEntries };
+        }
+      } else {
+        ride = rideExists;
+      }
+
+      if (!ride) {
+        this.logger.warn(
+          `Could not create or find ${isDirectRide ? 'direct ' : ''}ride ${rideData.name} for park ${park.name}`,
+        );
+        return { newEntries, skippedEntries };
+      }
+
+      // Store queue time data only if it has valid wait time
+      if (typeof rideData.wait_time === 'number') {
+        const lastUpdatedTime = rideData.last_updated
+          ? new Date(rideData.last_updated)
+          : new Date();
+
+        try {
+          // Check if we already have a queue time entry with the same lastUpdated timestamp and wait time
+          const existingQueueTime = await this.queueTimeRepository.findOne({
+            where: {
+              ride: { id: ride.id },
+              lastUpdated: lastUpdatedTime,
+              waitTime: rideData.wait_time,
+            },
+            order: { recordedAt: 'DESC' },
+          });
+
+          // Only save if we don't have this exact data already
+          if (!existingQueueTime) {
+            const queueTime = this.queueTimeRepository.create({
+              ride: ride,
+              waitTime: rideData.wait_time,
+              isOpen: rideData.is_open,
+              lastUpdated: lastUpdatedTime,
+              recordedAt: new Date(),
+            });
+
+            await this.queueTimeRepository.save(queueTime);
+            newEntries++;
+          } else {
+            skippedEntries++;
+          }
+        } catch (error) {
+          // Handle unique constraint violations gracefully
+          if (
+            error.code === '23505' ||
+            error.message.includes('duplicate key value violates unique constraint')
+          ) {
+            skippedEntries++;
+          } else {
+            this.logger.warn(
+              `Error saving queue time for ${isDirectRide ? 'direct ' : ''}ride ${ride.name}: ${error.message}`,
+            );
+          }
+        }
+      }
+    } catch (rideProcessingError) {
+      this.logger.warn(
+        `Error processing ${isDirectRide ? 'direct ' : ''}ride ${rideData.name} in park ${park.name}: ${rideProcessingError.message}`,
+      );
+      if (isDirectRide) {
+        this.logger.debug(
+          `Error details - Park ID: ${park.id}, Ride Queue Times ID: ${rideData.id}, Last Updated: ${rideData.last_updated}`,
+        );
+        this.logger.debug(`Full error stack: ${rideProcessingError.stack}`);
+      }
+    }
+
+    return { newEntries, skippedEntries };
   }
 
   /**
