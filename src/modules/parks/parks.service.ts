@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Park } from './park.entity.js';
 import { ParkGroup } from './park-group.entity.js';
 import { ThemeArea } from './theme-area.entity.js';
@@ -20,7 +21,15 @@ export class ParksService {
     private readonly themeAreaRepository: Repository<ThemeArea>,
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
+    private readonly configService: ConfigService,
   ) {}
+
+  /**
+   * Get the default park open threshold from configuration
+   */
+  private getDefaultOpenThreshold(): number {
+    return this.configService.get<number>('PARK_OPEN_THRESHOLD_PERCENT', 50);
+  }
 
   /**
    * Helper function to extract current queue time from a ride
@@ -38,12 +47,14 @@ export class ParksService {
   /**
    * Helper function to calculate if a park is open based on the percentage of open rides
    */
-  private calculateParkOpenStatus(park: any, openThreshold: number = 50): {
+  private calculateParkOpenStatus(park: any, openThreshold?: number): {
     isOpen: boolean;
     openRideCount: number;
     totalRideCount: number;
     openPercentage: number;
   } {
+    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
+    
     // Get all rides from all theme areas
     const allRides = park.themeAreas.flatMap((themeArea: any) => themeArea.rides);
     const totalRideCount = allRides.length;
@@ -64,7 +75,7 @@ export class ParksService {
     }).length;
 
     const openPercentage = Math.round((openRideCount / totalRideCount) * 100);
-    const isOpen = openPercentage >= openThreshold;
+    const isOpen = openPercentage >= threshold;
 
     return {
       isOpen,
@@ -98,7 +109,7 @@ export class ParksService {
   /**
    * Helper function to transform parks with theme areas and rides
    */
-  private transformPark(park: any, openThreshold: number = 50) {
+  private transformPark(park: any, openThreshold?: number) {
     const openStatus = this.calculateParkOpenStatus(park, openThreshold);
     
     return {
@@ -131,8 +142,9 @@ export class ParksService {
       parkGroupId,
       page = 1,
       limit = 10,
-      openThreshold = 50,
+      openThreshold,
     } = query;
+    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
     const queryBuilder = this.parkRepository
       .createQueryBuilder('park')
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')
@@ -180,7 +192,7 @@ export class ParksService {
     const parks = await queryBuilder.getMany();
 
     // Transform the data using helper functions
-    const transformedParks = parks.map((park) => this.transformPark(park, openThreshold));
+    const transformedParks = parks.map((park) => this.transformPark(park, threshold));
 
     return {
       data: transformedParks,
@@ -197,7 +209,7 @@ export class ParksService {
   /**
    * Get a single park by ID
    */
-  async findOne(id: number, openThreshold: number = 50): Promise<any> {
+  async findOne(id: number, openThreshold?: number): Promise<any> {
     const park = await this.parkRepository
       .createQueryBuilder('park')
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')

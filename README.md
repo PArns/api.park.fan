@@ -69,6 +69,34 @@ pnpm run build
 
 The API will be available at `http://localhost:3000`
 
+## ⚙️ Configuration
+
+The API can be configured using environment variables. Copy `.env.example` to `.env` and adjust the values as needed.
+
+### Environment Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `DB_HOST` | PostgreSQL database host | `localhost` | Yes |
+| `DB_PORT` | PostgreSQL database port | `5432` | Yes |
+| `DB_USER` | PostgreSQL username | `postgres` | Yes |
+| `DB_PASS` | PostgreSQL password | `postgres` | Yes |
+| `DB_NAME` | PostgreSQL database name | `parkfan` | Yes |
+| `PARK_OPEN_THRESHOLD_PERCENT` | Percentage threshold (0-100) to determine when a park is considered "open" | `50` | No |
+
+### Park Operating Status
+
+The `PARK_OPEN_THRESHOLD_PERCENT` variable controls how the API determines whether a park is "open" or "closed":
+
+- **Default (50%)**: A park is considered open if at least 50% of its rides are currently operating
+- **Flexible Range**: You can set any value from 0-100 to match your requirements
+- **API Override**: Users can override this default by passing `?openThreshold=X` in API requests
+
+This affects:
+- Park operating status in `/statistics` endpoint
+- Busiest/quietest park calculations
+- Park filtering in analytics
+
 ## 📚 API Documentation
 
 ### 🏰 Parks Endpoints
@@ -284,6 +312,30 @@ GET https://park.fan/statistics
         "isOpen": true,
         "lastUpdated": "2025-06-04T16:25:46.000Z"
       }
+    ],
+    "busiestParks": [
+      {
+        "parkId": 115,
+        "parkName": "Epic Universe",
+        "country": "United States",
+        "continent": "North America",
+        "averageWaitTime": 40,
+        "openRideCount": 18,
+        "totalRideCount": 19,
+        "operatingPercentage": 95
+      }
+    ],
+    "quietestParks": [
+      {
+        "parkId": 98,
+        "parkName": "Worlds of Fun",
+        "country": "United States",
+        "continent": "North America",
+        "averageWaitTime": 0,
+        "openRideCount": 25,
+        "totalRideCount": 25,
+        "operatingPercentage": 100
+      }
     ]
   },
   "parksByContinent": [
@@ -351,7 +403,9 @@ Rides are automatically categorized into wait time buckets:
 #### Real-time Top Lists
 - **Longest Wait Times**: Top 5 rides with the highest current wait times
 - **Shortest Wait Times**: Top 5 open rides with the lowest wait times (perfect for walk-ons!)
-- **Direct Navigation**: Each entry includes `rideId` and `parkId` for easy API navigation to specific rides and parks
+- **Busiest Parks**: Top 5 parks with the highest average wait times across all open rides
+- **Quietest Parks**: Top 5 parks with the lowest average wait times across all open rides
+- **Direct Navigation**: Each entry includes `rideId`/`parkId` for easy API navigation to specific rides and parks
 
 #### Navigation Examples
 Use the IDs from the top lists to get detailed information:
@@ -364,6 +418,9 @@ GET https://park.fan/parks/{parkId}
 
 # Get all rides in that park
 GET https://park.fan/parks/{parkId}/rides
+
+# Navigate to busiest/quietest parks directly
+GET https://park.fan/parks/{parkId}    # from busiestParks or quietestParks
 ```
 
 #### Example: Current Ride Insights
