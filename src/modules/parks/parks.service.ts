@@ -51,7 +51,7 @@ export class ParksService {
     isOpen: boolean;
     openRideCount: number;
     totalRideCount: number;
-    openPercentage: number;
+    operatingPercentage: number;
   } {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
     
@@ -64,7 +64,7 @@ export class ParksService {
         isOpen: false,
         openRideCount: 0,
         totalRideCount: 0,
-        openPercentage: 0,
+        operatingPercentage: 0,
       };
     }
 
@@ -74,15 +74,52 @@ export class ParksService {
       return currentQueueTime && currentQueueTime.isOpen;
     }).length;
 
-    const openPercentage = Math.round((openRideCount / totalRideCount) * 100);
-    const isOpen = openPercentage >= threshold;
+    const operatingPercentage = Math.round((openRideCount / totalRideCount) * 100);
+    const isOpen = operatingPercentage >= threshold;
 
     return {
       isOpen,
       openRideCount,
       totalRideCount,
-      openPercentage,
+      operatingPercentage,
     };
+  }
+
+  /**
+   * Helper function to calculate wait time distribution for a park
+   */
+  private calculateWaitTimeDistribution(park: any): {
+    '0-10': number;
+    '11-30': number;
+    '31-60': number;
+    '61-120': number;
+    '120+': number;
+  } {
+    const waitTimeDistribution = {
+      '0-10': 0,
+      '11-30': 0,
+      '31-60': 0,
+      '61-120': 0,
+      '120+': 0,
+    };
+
+    // Get all rides from all theme areas
+    const allRides = park.themeAreas.flatMap((themeArea: any) => themeArea.rides);
+
+    // Calculate wait time distribution
+    allRides.forEach(ride => {
+      const currentQueueTime = this.getCurrentQueueTime(ride);
+      if (currentQueueTime && currentQueueTime.isOpen && currentQueueTime.waitTime !== null) {
+        const waitTime = currentQueueTime.waitTime;
+        if (waitTime <= 10) waitTimeDistribution['0-10']++;
+        else if (waitTime <= 30) waitTimeDistribution['11-30']++;
+        else if (waitTime <= 60) waitTimeDistribution['31-60']++;
+        else if (waitTime <= 120) waitTimeDistribution['61-120']++;
+        else waitTimeDistribution['120+']++;
+      }
+    });
+
+    return waitTimeDistribution;
   }
 
   /**
@@ -111,6 +148,7 @@ export class ParksService {
    */
   private transformPark(park: any, openThreshold?: number) {
     const openStatus = this.calculateParkOpenStatus(park, openThreshold);
+    const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
     
     return {
       ...park,
@@ -118,6 +156,7 @@ export class ParksService {
         this.transformThemeArea(themeArea),
       ),
       operatingStatus: openStatus,
+      waitTimeDistribution, // Add wait time distribution to park data
     };
   }
 

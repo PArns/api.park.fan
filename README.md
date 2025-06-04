@@ -188,7 +188,7 @@ All park endpoints now include an `operatingStatus` field that intelligently det
     "isOpen": true,
     "openRideCount": 25,
     "totalRideCount": 39,
-    "openPercentage": 64
+    "operatingPercentage": 64
   }
 }
 ```
@@ -253,7 +253,7 @@ GET https://park.fan/statistics
   "parkOperatingStatus": {
     "openParks": 53,
     "closedParks": 80,
-    "openPercentage": 40,
+    "operatingPercentage": 40,
     "openThreshold": 50
   },
   "rideStatistics": {
@@ -344,14 +344,14 @@ GET https://park.fan/statistics
       "totalParks": 69,
       "openParks": 47,
       "closedParks": 22,
-      "openPercentage": 68
+      "operatingPercentage": 68
     },
     {
       "continent": "Europe",
       "totalParks": 46,
       "openParks": 6,
       "closedParks": 40,
-      "openPercentage": 13
+      "operatingPercentage": 13
     }
   ],
   "parksByCountry": [
@@ -360,14 +360,14 @@ GET https://park.fan/statistics
       "totalParks": 66,
       "openParks": 44,
       "closedParks": 22,
-      "openPercentage": 67
+      "operatingPercentage": 67
     },
     {
       "country": "France",
       "totalParks": 9,
       "openParks": 2,
       "closedParks": 7,
-      "openPercentage": 22
+      "operatingPercentage": 22
     }
   ]
 }

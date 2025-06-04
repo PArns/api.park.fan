@@ -58,8 +58,8 @@ export class StatisticsService {
       return currentQueueTime && currentQueueTime.isOpen;
     }).length;
 
-    const openPercentage = Math.round((openRideCount / totalRideCount) * 100);
-    return openPercentage >= threshold;
+    const operatingPercentage = Math.round((openRideCount / totalRideCount) * 100);
+    return operatingPercentage >= threshold;
   }
 
   /**
@@ -104,7 +104,7 @@ export class StatisticsService {
       parkOperatingStatus: {
         openParks: openParksCount,
         closedParks: closedParksCount,
-        openPercentage: Math.round((openParksCount / totalParks) * 100),
+        operatingPercentage: Math.round((openParksCount / totalParks) * 100),
         openThreshold: threshold,
       },
       rideStatistics,
@@ -139,7 +139,7 @@ export class StatisticsService {
         totalParks: stats.total,
         openParks: stats.open,
         closedParks: stats.total - stats.open,
-        openPercentage: Math.round((stats.open / stats.total) * 100),
+        operatingPercentage: Math.round((stats.open / stats.total) * 100),
       }))
       .sort((a, b) => b.totalParks - a.totalParks);
   }
@@ -170,7 +170,7 @@ export class StatisticsService {
         totalParks: stats.total,
         openParks: stats.open,
         closedParks: stats.total - stats.open,
-        openPercentage: Math.round((stats.open / stats.total) * 100),
+        operatingPercentage: Math.round((stats.open / stats.total) * 100),
       }))
       .sort((a, b) => b.totalParks - a.totalParks)
       .slice(0, 10); // Top 10 countries by total parks
