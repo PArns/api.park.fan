@@ -3,6 +3,11 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { StatusModule } from './modules/status/status.module';
 import { ParksModule } from './modules/parks/parks.module';
+import { RidesModule } from './modules/rides/rides.module';
+import { StatisticsModule } from './modules/statistics/statistics.module';
+import { CountriesModule } from './modules/countries/countries.module';
+import { ContinentsModule } from './modules/continents/continents.module';
+import { QueueTimesModule } from './modules/queue-times/queue-times.module';
 import { QueueTimesParserModule } from './modules/queue-times-parser/queue-times-parser.module';
 import { ScheduleModule } from '@nestjs/schedule';
 
@@ -28,6 +33,11 @@ import { ScheduleModule } from '@nestjs/schedule';
     }),
     StatusModule,
     ParksModule,
+    RidesModule,
+    StatisticsModule,
+    CountriesModule,
+    ContinentsModule,
+    QueueTimesModule,
     QueueTimesParserModule,
     ScheduleModule.forRoot(),
   ],

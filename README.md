@@ -70,24 +70,36 @@ The API will be available at `http://localhost:3000`
 
 ## 📚 API Documentation
 
-### Parks Endpoints
+### 🏰 Parks Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/parks` | Get all parks with pagination and filtering |
 | `GET` | `/parks/:id` | Get a specific park with rides and queue times |
-| `GET` | `/parks/rides/:id` | Get individual ride with current queue time |
-| `GET` | `/parks/statistics` | Get comprehensive park statistics |
-| `GET` | `/parks/countries` | Get list of all countries with parks |
-| `GET` | `/parks/continents` | Get list of all continents with parks |
+| `GET` | `/parks/:id/rides` | Get all rides for a specific park |
 
-### Queue Times Endpoints
+### 🎠 Rides Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/parks/queue-times/statistics` | Get queue time statistics |
+| `GET` | `/rides` | Get all rides with filtering and pagination |
+| `GET` | `/rides/:id` | Get a specific ride with current queue time |
 
-### System Status
+### 📊 Statistics & Data Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/statistics` | Get comprehensive park and ride statistics |
+| `GET` | `/countries` | Get list of all countries with parks |
+| `GET` | `/continents` | Get list of all continents with parks |
+
+### ⏱️ Queue Times Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/queue-times/statistics` | Get queue time statistics and analytics |
+
+### 🔍 System Status
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -97,22 +109,39 @@ The API will be available at `http://localhost:3000`
 
 #### Parks Filtering (`/parks`)
 - `search` - Search parks by name or country
-- `country` - Filter by specific country
-- `continent` - Filter by specific continent
+- `country` - Filter by specific country (e.g., `?country=Germany`)
+- `continent` - Filter by specific continent (e.g., `?continent=Europe`)
 - `parkGroupId` - Filter by park group ID
+- `page` - Page number for pagination (default: 1)
+- `limit` - Results per page (default: 10, max: 100)
+
+#### Rides Filtering (`/rides`)
+- `search` - Search rides by name (e.g., `?search=coaster`)
+- `parkId` - Filter rides by specific park ID
+- `isActive` - Filter by ride status (true/false)
 - `page` - Page number for pagination (default: 1)
 - `limit` - Results per page (default: 10, max: 100)
 
 ### Example Requests
 
-#### Get Parks with Filtering
+#### Get Parks with Country Filtering
 ```bash
-GET https://park.fan/parks?country=United%20States&page=1&limit=5
+GET https://park.fan/parks?country=Germany&page=1&limit=5
 ```
 
-#### Get Specific Ride
+#### Search for Coaster Rides
 ```bash
-GET https://park.fan/parks/rides/1
+GET https://park.fan/rides?search=coaster&limit=10
+```
+
+#### Get All Rides for a Specific Park
+```bash
+GET https://park.fan/parks/1/rides
+```
+
+#### Get Specific Ride Details
+```bash
+GET https://park.fan/rides/1
 ```
 
 **Response:**
@@ -132,11 +161,36 @@ GET https://park.fan/parks/rides/1
     "name": "Coasters"
   },
   "currentQueueTime": {
-    "id": 52800,
     "waitTime": 15,
     "isOpen": true,
     "lastUpdated": "2025-06-03T20:00:44.000Z"
   }
+}
+```
+
+#### Get Statistics
+```bash
+GET https://park.fan/statistics
+```
+
+**Response:**
+```json
+{
+  "totalParks": 133,
+  "totalThemeAreas": 422,
+  "totalRides": 2683,
+  "parksByCountry": [
+    {
+      "country": "United States",
+      "count": 45
+    }
+  ],
+  "parksByContinent": [
+    {
+      "continent": "North America",
+      "count": 67
+    }
+  ]
 }
 ```
 
@@ -156,10 +210,15 @@ GET https://park.fan/parks/rides/1
 ```
 src/
 ├── modules/
-│   ├── parks/              # Parks, rides, and queue times
+│   ├── parks/              # Parks management and park-specific operations
+│   ├── rides/              # Rides endpoints with filtering and search
+│   ├── statistics/         # Statistics and analytics endpoints
+│   ├── countries/          # Countries data endpoints
+│   ├── continents/         # Continents data endpoints
+│   ├── queue-times/        # Queue times statistics and analytics
 │   ├── queue-times-parser/ # Data parsing and updates
 │   ├── database/           # Database configuration
-│   └── status/             # Health checks
+│   └── status/             # Health checks and system status
 ├── app.module.ts
 └── main.ts
 ```

@@ -156,7 +156,11 @@ export class QueueTimesParserService {
 
           // Create or get a default theme area for direct rides
           let defaultThemeArea = await this.themeAreaRepository.findOne({
-            where: { queueTimesId: null, park: { id: park.id }, name: 'General' },
+            where: {
+              queueTimesId: null,
+              park: { id: park.id },
+              name: 'General',
+            },
           });
 
           if (!defaultThemeArea) {
@@ -180,7 +184,11 @@ export class QueueTimesParserService {
               ) {
                 // Try to find the existing default theme area again
                 defaultThemeArea = await this.themeAreaRepository.findOne({
-                  where: { queueTimesId: null, park: { id: park.id }, name: 'General' },
+                  where: {
+                    queueTimesId: null,
+                    park: { id: park.id },
+                    name: 'General',
+                  },
                 });
               }
               if (!defaultThemeArea) {
@@ -334,7 +342,7 @@ export class QueueTimesParserService {
             },
             ['queueTimesId', 'park'],
           );
-          
+
           // Fetch the ride again after upsert
           ride = await this.rideRepository.findOne({
             where: { queueTimesId: rideData.id, park: { id: park.id } },
@@ -393,7 +401,9 @@ export class QueueTimesParserService {
           // Handle unique constraint violations gracefully
           if (
             error.code === '23505' ||
-            error.message.includes('duplicate key value violates unique constraint')
+            error.message.includes(
+              'duplicate key value violates unique constraint',
+            )
           ) {
             skippedEntries++;
           } else {

@@ -7,10 +7,10 @@ export class QueueTimesScheduler implements OnModuleInit {
   private readonly logger = new Logger(QueueTimesScheduler.name);
 
   constructor(private readonly parser: QueueTimesParserService) {}
-  async onModuleInit() {
+  onModuleInit() {
     // Wait a bit for TypeORM to be ready, then start initial data fetch
     setTimeout(() => {
-      this.performInitialDataFetch();
+      void this.performInitialDataFetch();
     }, 5000); // 5 seconds delay
   }
 
@@ -33,7 +33,7 @@ export class QueueTimesScheduler implements OnModuleInit {
       // Retry in 30 seconds if initial fetch fails
       setTimeout(() => {
         this.logger.log('Retrying initial data fetch...');
-        this.performInitialDataFetch();
+        void this.performInitialDataFetch();
       }, 30 * 1000);
     }
   }
@@ -48,7 +48,7 @@ export class QueueTimesScheduler implements OnModuleInit {
         await this.parser.getQueueTimeStatistics();
         this.logger.log('Database connection is ready');
         return;
-      } catch (error) {
+      } catch {
         retries++;
         this.logger.log(
           `Database not ready yet, retry ${retries}/${maxRetries}`,

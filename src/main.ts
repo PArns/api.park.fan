@@ -47,8 +47,6 @@ async function createDatabaseIfNotExists() {
 }
 
 async function bootstrap(): Promise<void> {
-  const logger = new Logger('Bootstrap');
-
   // Create database BEFORE starting the NestJS app
   await createDatabaseIfNotExists();
 
@@ -59,4 +57,4 @@ async function bootstrap(): Promise<void> {
   await app.listen(port);
 }
 
-bootstrap();
+void bootstrap();
