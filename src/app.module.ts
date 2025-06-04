@@ -11,6 +11,7 @@ import { QueueTimesModule } from './modules/queue-times/queue-times.module';
 import { QueueTimesParserModule } from './modules/queue-times-parser/queue-times-parser.module';
 import { UtilsModule } from './modules/utils/utils.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { IndexModule } from './modules/index/index.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     QueueTimesModule,
     QueueTimesParserModule,
     UtilsModule,
+    IndexModule,
     ScheduleModule.forRoot(),
   ],
   controllers: [],
