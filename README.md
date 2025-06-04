@@ -17,6 +17,7 @@ Built with **NestJS** and **TypeScript** - a high-performance API providing comp
 - **📈 Performance-Optimized**: Built for high throughput with efficient data structures
 - **🎯 Intelligent Park Status**: Automatic detection of whether parks are "open" or "closed"
 - **🏁 Top Lists**: Longest/shortest wait times, busiest/quietest parks
+- **⚡ Optimized Caching**: API responses include cache headers with 5-minute TTL for improved performance
 
 ## 📊 Data Source
 
@@ -426,6 +427,25 @@ src/
 5. **🎯 RESTful API**: Clean endpoints with intelligent caching
 6. **📱 Response Formatting**: Consistent JSON responses with rich metadata
 
+## 🚀 Performance Optimizations
+
+### 📦 Caching Strategy
+
+The API implements a robust caching strategy to enhance performance and reduce load:
+
+- **⏱️ Cache Headers**: All API responses include Cache-Control headers with a 5-minute (300 seconds) TTL
+- **🔄 Automatic Invalidation**: Cache refreshes after the TTL expires to ensure data freshness
+- **⚡ Improved Response Times**: Enables client-side caching for faster repeat requests
+- **📈 Reduced Server Load**: Minimizes redundant processing for frequently requested endpoints
+- **🌐 CDN Compatibility**: Compatible with CDNs and reverse proxies for edge caching
+
+Example response header:
+```
+Cache-Control: public, max-age=300
+```
+
+This caching implementation is handled through a global NestJS interceptor that applies consistent cache headers across all API endpoints.
+
 ## 🔄 Data Updates
 
 The API automatically fetches and updates queue time data through a scheduled service that:
@@ -485,4 +505,4 @@ Created by **[Patrick Arns https://arns.dev](https://arns.dev)** - Rust develope
 
 *Built with ❤️ for theme park enthusiasts worldwide* 🎡
 
-**Live API: [https://park.fan](https://park.fan) | Powered by [queue-times.com](https://queue-times.com) data**
+**Live API: [https://api.park.fan](https://api.park.fan) | Powered by [queue-times.com](https://queue-times.com) data**
