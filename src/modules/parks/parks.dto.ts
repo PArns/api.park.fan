@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional } from 'class-validator';
+import { IsString, IsNumber, IsOptional, Min, Max } from 'class-validator';
 
 export class ParkQueryDto {
   @IsOptional()
@@ -24,4 +24,10 @@ export class ParkQueryDto {
   @IsOptional()
   @IsNumber()
   limit?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  openThreshold?: number; // Percentage threshold for park to be considered "open" (default: 50)
 }

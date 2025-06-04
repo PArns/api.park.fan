@@ -9,6 +9,7 @@ A comprehensive REST API for theme park data, ride information, and real-time qu
 - **⏱️ Real-time Queue Times**: Live wait times for park attractions
 - **📊 Statistics**: Comprehensive park and ride statistics
 - **🔍 Advanced Search**: Filter parks by country, continent, or search terms
+- **🏁 Park Operating Status**: Intelligent park status detection based on ride availability
 - **📱 RESTful API**: Clean, intuitive API endpoints
 - **🔄 Automatic Updates**: Scheduled queue time updates from external sources
 
@@ -89,7 +90,7 @@ The API will be available at `http://localhost:3000`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/statistics` | Get comprehensive park and ride statistics |
+| `GET` | `/statistics` | Get comprehensive park and ride statistics with operating status |
 | `GET` | `/countries` | Get list of all countries with parks |
 | `GET` | `/continents` | Get list of all continents with parks |
 
@@ -112,6 +113,7 @@ The API will be available at `http://localhost:3000`
 - `country` - Filter by specific country (e.g., `?country=Germany`)
 - `continent` - Filter by specific continent (e.g., `?continent=Europe`)
 - `parkGroupId` - Filter by park group ID
+- `openThreshold` - Percentage threshold for park to be considered "open" (0-100, default: 50)
 - `page` - Page number for pagination (default: 1)
 - `limit` - Results per page (default: 10, max: 100)
 
@@ -121,6 +123,9 @@ The API will be available at `http://localhost:3000`
 - `isActive` - Filter by ride status (true/false)
 - `page` - Page number for pagination (default: 1)
 - `limit` - Results per page (default: 10, max: 100)
+
+#### Statistics Parameters (`/statistics`)
+- `openThreshold` - Percentage threshold for park to be considered "open" (0-100, default: 50)
 
 ### Example Requests
 
@@ -137,6 +142,44 @@ GET https://park.fan/rides?search=coaster&limit=10
 #### Get All Rides for a Specific Park
 ```bash
 GET https://park.fan/parks/1/rides
+```
+
+### 🏁 Park Operating Status
+
+All park endpoints now include an `operatingStatus` field that intelligently determines if a park is open based on the percentage of rides that are currently operating.
+
+#### How It Works
+- **Threshold-based**: Parks are considered "open" when at least X% of their rides are open
+- **Default Threshold**: 50% (configurable via `openThreshold` parameter)
+- **Real-time Data**: Based on current queue time data and ride availability
+
+#### Operating Status Response
+```json
+{
+  "operatingStatus": {
+    "isOpen": true,
+    "openRideCount": 25,
+    "totalRideCount": 39,
+    "openPercentage": 64
+  }
+}
+```
+
+#### Examples
+
+**Check park with default 50% threshold:**
+```bash
+GET https://park.fan/parks/25
+```
+
+**Check park with custom 25% threshold:**
+```bash
+GET https://park.fan/parks/25?openThreshold=25
+```
+
+**Find all parks that are open (75% threshold):**
+```bash
+GET https://park.fan/parks?openThreshold=75
 ```
 
 #### Get Specific Ride Details
@@ -178,19 +221,172 @@ GET https://park.fan/statistics
 {
   "totalParks": 133,
   "totalThemeAreas": 422,
-  "totalRides": 2683,
-  "parksByCountry": [
-    {
-      "country": "United States",
-      "count": 45
-    }
-  ],
+  "totalRides": 4164,
+  "parkOperatingStatus": {
+    "openParks": 53,
+    "closedParks": 80,
+    "openPercentage": 40,
+    "openThreshold": 50
+  },
+  "rideStatistics": {
+    "totalRides": 2683,
+    "activeRides": 2683,
+    "inactiveRides": 0,
+    "openRides": 1548,
+    "closedRides": 1135,
+    "ridesWithoutData": 0,
+    "operatingPercentage": 58,
+    "waitTimeDistribution": {
+      "0-10": 1320,
+      "11-30": 136,
+      "31-60": 70,
+      "61-120": 21,
+      "120+": 1
+    },
+    "ridesByContinent": [
+      {
+        "continent": "North America",
+        "totalRides": 2036,
+        "activeRides": 2036,
+        "openRides": 1423,
+        "operatingPercentage": 70
+      }
+    ],
+    "ridesByCountry": [
+      {
+        "country": "United States",
+        "totalRides": 1858,
+        "activeRides": 1858,
+        "openRides": 1271,
+        "operatingPercentage": 68
+      }
+    ],
+    "longestWaitTimes": [
+      {
+        "rideId": 2407,
+        "rideName": "Radiator Springs Racers",
+        "parkId": 123,
+        "parkName": "Disney California Adventure",
+        "country": "United States",
+        "waitTime": 125,
+        "isOpen": true,
+        "lastUpdated": "2025-06-04T16:21:39.000Z"
+      }
+    ],
+    "shortestWaitTimes": [
+      {
+        "rideId": 1445,
+        "rideName": "Backlot Stunt Coaster",
+        "parkId": 81,
+        "parkName": "Canada's Wonderland",
+        "country": "Canada",
+        "waitTime": 0,
+        "isOpen": true,
+        "lastUpdated": "2025-06-04T16:25:46.000Z"
+      }
+    ]
+  },
   "parksByContinent": [
     {
       "continent": "North America",
-      "count": 67
+      "totalParks": 69,
+      "openParks": 47,
+      "closedParks": 22,
+      "openPercentage": 68
+    },
+    {
+      "continent": "Europe",
+      "totalParks": 46,
+      "openParks": 6,
+      "closedParks": 40,
+      "openPercentage": 13
+    }
+  ],
+  "parksByCountry": [
+    {
+      "country": "United States",
+      "totalParks": 66,
+      "openParks": 44,
+      "closedParks": 22,
+      "openPercentage": 67
+    },
+    {
+      "country": "France",
+      "totalParks": 9,
+      "openParks": 2,
+      "closedParks": 7,
+      "openPercentage": 22
     }
   ]
+}
+```
+
+#### Get Statistics with Custom Threshold
+```bash
+GET https://park.fan/statistics?openThreshold=25
+```
+
+### 🎢 Comprehensive Ride Statistics
+
+The statistics endpoint now provides detailed ride analytics including:
+
+#### Key Metrics
+- **Total, Active, and Operating Ride Counts**: Real-time statistics on ride availability
+- **Wait Time Distribution**: Categorized by time ranges (0-10, 11-30, 31-60, 61-120, 120+ minutes)
+- **Geographic Analysis**: Ride statistics broken down by continent and country
+- **Top Lists**: Longest and shortest wait times across all parks
+
+#### Wait Time Distribution
+Rides are automatically categorized into wait time buckets:
+- **0-10 minutes**: Walk-on attractions and short waits
+- **11-30 minutes**: Moderate wait times
+- **31-60 minutes**: Popular attractions with longer waits
+- **61-120 minutes**: High-demand attractions
+- **120+ minutes**: Peak popularity rides
+
+#### Geographic Breakdown
+- **By Continent**: Total rides, active rides, open rides, and operating percentages
+- **By Country**: Top 10 countries with the most rides and their operating statistics
+
+#### Real-time Top Lists
+- **Longest Wait Times**: Top 5 rides with the highest current wait times
+- **Shortest Wait Times**: Top 5 open rides with the lowest wait times (perfect for walk-ons!)
+- **Direct Navigation**: Each entry includes `rideId` and `parkId` for easy API navigation to specific rides and parks
+
+#### Navigation Examples
+Use the IDs from the top lists to get detailed information:
+```bash
+# Get details for the ride with longest wait time
+GET https://park.fan/rides/{rideId}
+
+# Get details for the park containing that ride
+GET https://park.fan/parks/{parkId}
+
+# Get all rides in that park
+GET https://park.fan/parks/{parkId}/rides
+```
+
+#### Example: Current Ride Insights
+```json
+{
+  "rideStatistics": {
+    "totalRides": 2683,
+    "operatingPercentage": 58,
+    "waitTimeDistribution": {
+      "0-10": 1320,    // 85% of open rides have short waits!
+      "11-30": 136,
+      "31-60": 70,
+      "61-120": 21,
+      "120+": 1
+    },
+    "longestWaitTimes": [
+      {
+        "rideName": "Radiator Springs Racers",
+        "waitTime": 125,
+        "parkName": "Disney California Adventure"
+      }
+    ]
+  }
 }
 ```
 

@@ -23,8 +23,12 @@ export class ParksController {
   }
 
   @Get(':id')
-  async findOne(@Param('id', ParseIntPipe) id: number): Promise<any> {
-    return this.parksService.findOne(id);
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Query() query: ParkQueryDto,
+  ): Promise<any> {
+    const { openThreshold = 50 } = query;
+    return this.parksService.findOne(id, openThreshold);
   }
 
   @Get(':id/rides')

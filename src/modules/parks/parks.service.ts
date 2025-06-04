@@ -36,6 +36,45 @@ export class ParksService {
   }
 
   /**
+   * Helper function to calculate if a park is open based on the percentage of open rides
+   */
+  private calculateParkOpenStatus(park: any, openThreshold: number = 50): {
+    isOpen: boolean;
+    openRideCount: number;
+    totalRideCount: number;
+    openPercentage: number;
+  } {
+    // Get all rides from all theme areas
+    const allRides = park.themeAreas.flatMap((themeArea: any) => themeArea.rides);
+    const totalRideCount = allRides.length;
+    
+    if (totalRideCount === 0) {
+      return {
+        isOpen: false,
+        openRideCount: 0,
+        totalRideCount: 0,
+        openPercentage: 0,
+      };
+    }
+
+    // Count rides that are currently open (have queue time data and isOpen = true)
+    const openRideCount = allRides.filter((ride: any) => {
+      const currentQueueTime = this.getCurrentQueueTime(ride);
+      return currentQueueTime && currentQueueTime.isOpen;
+    }).length;
+
+    const openPercentage = Math.round((openRideCount / totalRideCount) * 100);
+    const isOpen = openPercentage >= openThreshold;
+
+    return {
+      isOpen,
+      openRideCount,
+      totalRideCount,
+      openPercentage,
+    };
+  }
+
+  /**
    * Helper function to transform rides with current queue times
    */
   private transformRide(ride: any) {
@@ -59,12 +98,15 @@ export class ParksService {
   /**
    * Helper function to transform parks with theme areas and rides
    */
-  private transformPark(park: any) {
+  private transformPark(park: any, openThreshold: number = 50) {
+    const openStatus = this.calculateParkOpenStatus(park, openThreshold);
+    
     return {
       ...park,
       themeAreas: park.themeAreas.map((themeArea) =>
         this.transformThemeArea(themeArea),
       ),
+      operatingStatus: openStatus,
     };
   }
 
@@ -89,6 +131,7 @@ export class ParksService {
       parkGroupId,
       page = 1,
       limit = 10,
+      openThreshold = 50,
     } = query;
     const queryBuilder = this.parkRepository
       .createQueryBuilder('park')
@@ -137,7 +180,7 @@ export class ParksService {
     const parks = await queryBuilder.getMany();
 
     // Transform the data using helper functions
-    const transformedParks = parks.map((park) => this.transformPark(park));
+    const transformedParks = parks.map((park) => this.transformPark(park, openThreshold));
 
     return {
       data: transformedParks,
@@ -154,7 +197,7 @@ export class ParksService {
   /**
    * Get a single park by ID
    */
-  async findOne(id: number): Promise<any> {
+  async findOne(id: number, openThreshold: number = 50): Promise<any> {
     const park = await this.parkRepository
       .createQueryBuilder('park')
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')
@@ -172,7 +215,7 @@ export class ParksService {
     }
 
     // Transform the data using helper functions
-    return this.transformPark(park);
+    return this.transformPark(park, openThreshold);
   }
 
   /**
