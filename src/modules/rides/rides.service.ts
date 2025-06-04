@@ -3,13 +3,23 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Ride } from '../parks/ride.entity.js';
 import { RideQueryDto } from './rides.dto.js';
+import { ParkUtilsService } from '../utils/park-utils.service.js';
 
 @Injectable()
 export class RidesService {
   constructor(
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
+    private readonly parkUtils: ParkUtilsService,
   ) {}
+
+  /**
+   * Helper function to extract current queue time from a ride
+   * @private
+   */
+  private getCurrentQueueTime(ride: any) {
+    return this.parkUtils.getCurrentQueueTime(ride);
+  }
 
   /**
    * Get all rides with optional filtering
@@ -66,15 +76,7 @@ export class RidesService {
             name: ride.themeArea.name,
           }
         : null,
-      currentQueueTime:
-        ride.queueTimes && ride.queueTimes.length > 0
-          ? {
-              id: ride.queueTimes[0].id,
-              waitTime: ride.queueTimes[0].waitTime,
-              isOpen: ride.queueTimes[0].isOpen,
-              lastUpdated: ride.queueTimes[0].lastUpdated,
-            }
-          : null,
+      currentQueueTime: this.getCurrentQueueTime(ride),
     }));
 
     return {
@@ -108,15 +110,7 @@ export class RidesService {
     }
 
     // Get the most recent queue time for this ride
-    const currentQueueTime =
-      ride.queueTimes && ride.queueTimes.length > 0
-        ? {
-            id: ride.queueTimes[0].id,
-            waitTime: ride.queueTimes[0].waitTime,
-            isOpen: ride.queueTimes[0].isOpen,
-            lastUpdated: ride.queueTimes[0].lastUpdated,
-          }
-        : null;
+    const currentQueueTime = this.getCurrentQueueTime(ride);
 
     return {
       id: ride.id,

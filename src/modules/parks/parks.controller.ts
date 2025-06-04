@@ -31,7 +31,10 @@ export class ParksController {
     @Param('id', ParseIntPipe) id: number,
     @Query() query: ParkQueryDto,
   ): Promise<any> {
-    const defaultThreshold = this.configService.get<number>('PARK_OPEN_THRESHOLD_PERCENT', 50);
+    const defaultThreshold = this.configService.get<number>(
+      'PARK_OPEN_THRESHOLD_PERCENT',
+      50,
+    );
     const threshold = query.openThreshold ?? defaultThreshold;
     // Ensure threshold is between 0 and 100
     const validThreshold = Math.min(Math.max(threshold, 0), 100);

@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import { Park } from './park.entity.js';
 import { ParkGroup } from './park-group.entity.js';
 import { ThemeArea } from './theme-area.entity.js';
 import { Ride } from './ride.entity.js';
 import { ParkQueryDto } from './parks.dto.js';
+import { ParkUtilsService } from '../utils/park-utils.service.js';
+import {
+  ParkOperatingStatus,
+  WaitTimeDistribution,
+} from '../utils/park-utils.types.js';
 
 @Injectable()
 export class ParksService {
@@ -21,105 +25,42 @@ export class ParksService {
     private readonly themeAreaRepository: Repository<ThemeArea>,
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
-    private readonly configService: ConfigService,
+    private readonly parkUtils: ParkUtilsService,
   ) {}
 
   /**
    * Get the default park open threshold from configuration
+   * @private
    */
   private getDefaultOpenThreshold(): number {
-    return this.configService.get<number>('PARK_OPEN_THRESHOLD_PERCENT', 50);
+    return this.parkUtils.getDefaultOpenThreshold();
   }
 
   /**
    * Helper function to extract current queue time from a ride
+   * @private
    */
   private getCurrentQueueTime(ride: any) {
-    return ride.queueTimes && ride.queueTimes.length > 0
-      ? {
-          waitTime: ride.queueTimes[0].waitTime,
-          isOpen: ride.queueTimes[0].isOpen,
-          lastUpdated: ride.queueTimes[0].lastUpdated,
-        }
-      : null;
+    return this.parkUtils.getCurrentQueueTime(ride);
   }
 
   /**
    * Helper function to calculate if a park is open based on the percentage of open rides
+   * @private
    */
-  private calculateParkOpenStatus(park: any, openThreshold?: number): {
-    isOpen: boolean;
-    openRideCount: number;
-    totalRideCount: number;
-    operatingPercentage: number;
-  } {
-    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
-    
-    // Get all rides from all theme areas
-    const allRides = park.themeAreas.flatMap((themeArea: any) => themeArea.rides);
-    const totalRideCount = allRides.length;
-    
-    if (totalRideCount === 0) {
-      return {
-        isOpen: false,
-        openRideCount: 0,
-        totalRideCount: 0,
-        operatingPercentage: 0,
-      };
-    }
-
-    // Count rides that are currently open (have queue time data and isOpen = true)
-    const openRideCount = allRides.filter((ride: any) => {
-      const currentQueueTime = this.getCurrentQueueTime(ride);
-      return currentQueueTime && currentQueueTime.isOpen;
-    }).length;
-
-    const operatingPercentage = Math.round((openRideCount / totalRideCount) * 100);
-    const isOpen = operatingPercentage >= threshold;
-
-    return {
-      isOpen,
-      openRideCount,
-      totalRideCount,
-      operatingPercentage,
-    };
+  private calculateParkOpenStatus(
+    park: any,
+    openThreshold?: number,
+  ): ParkOperatingStatus {
+    return this.parkUtils.getDetailedParkOpenStatus(park, openThreshold);
   }
 
   /**
    * Helper function to calculate wait time distribution for a park
+   * @private
    */
-  private calculateWaitTimeDistribution(park: any): {
-    '0-10': number;
-    '11-30': number;
-    '31-60': number;
-    '61-120': number;
-    '120+': number;
-  } {
-    const waitTimeDistribution = {
-      '0-10': 0,
-      '11-30': 0,
-      '31-60': 0,
-      '61-120': 0,
-      '120+': 0,
-    };
-
-    // Get all rides from all theme areas
-    const allRides = park.themeAreas.flatMap((themeArea: any) => themeArea.rides);
-
-    // Calculate wait time distribution
-    allRides.forEach(ride => {
-      const currentQueueTime = this.getCurrentQueueTime(ride);
-      if (currentQueueTime && currentQueueTime.isOpen && currentQueueTime.waitTime !== null) {
-        const waitTime = currentQueueTime.waitTime;
-        if (waitTime <= 10) waitTimeDistribution['0-10']++;
-        else if (waitTime <= 30) waitTimeDistribution['11-30']++;
-        else if (waitTime <= 60) waitTimeDistribution['31-60']++;
-        else if (waitTime <= 120) waitTimeDistribution['61-120']++;
-        else waitTimeDistribution['120+']++;
-      }
-    });
-
-    return waitTimeDistribution;
+  private calculateWaitTimeDistribution(park: any): WaitTimeDistribution {
+    return this.parkUtils.calculateWaitTimeDistribution(park);
   }
 
   /**
@@ -149,7 +90,7 @@ export class ParksService {
   private transformPark(park: any, openThreshold?: number) {
     const openStatus = this.calculateParkOpenStatus(park, openThreshold);
     const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
-    
+
     return {
       ...park,
       themeAreas: park.themeAreas.map((themeArea) =>
@@ -231,7 +172,9 @@ export class ParksService {
     const parks = await queryBuilder.getMany();
 
     // Transform the data using helper functions
-    const transformedParks = parks.map((park) => this.transformPark(park, threshold));
+    const transformedParks = parks.map((park) =>
+      this.transformPark(park, threshold),
+    );
 
     return {
       data: transformedParks,

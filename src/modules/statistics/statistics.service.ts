@@ -5,6 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import { Park } from '../parks/park.entity.js';
 import { ThemeArea } from '../parks/theme-area.entity.js';
 import { Ride } from '../parks/ride.entity.js';
+import { ParkUtilsService } from '../utils/park-utils.service.js';
+import { WaitTimeDistribution, QueueTime } from '../utils/park-utils.types.js';
 
 @Injectable()
 export class StatisticsService {
@@ -16,50 +18,28 @@ export class StatisticsService {
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
     private readonly configService: ConfigService,
+    private readonly parkUtils: ParkUtilsService,
   ) {}
 
   /**
    * Get the default park open threshold from configuration
    */
   private getDefaultOpenThreshold(): number {
-    return this.configService.get<number>('PARK_OPEN_THRESHOLD_PERCENT', 50);
+    return this.parkUtils.getDefaultOpenThreshold();
   }
 
   /**
    * Helper function to extract current queue time from a ride
    */
   private getCurrentQueueTime(ride: any) {
-    return ride.queueTimes && ride.queueTimes.length > 0
-      ? {
-          waitTime: ride.queueTimes[0].waitTime,
-          isOpen: ride.queueTimes[0].isOpen,
-          lastUpdated: ride.queueTimes[0].lastUpdated,
-        }
-      : null;
+    return this.parkUtils.getCurrentQueueTime(ride);
   }
 
   /**
    * Helper function to calculate if a park is open based on the percentage of open rides
    */
   private calculateParkOpenStatus(park: any, openThreshold?: number): boolean {
-    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
-    
-    // Get all rides from all theme areas
-    const allRides = park.themeAreas.flatMap((themeArea: any) => themeArea.rides);
-    const totalRideCount = allRides.length;
-    
-    if (totalRideCount === 0) {
-      return false;
-    }
-
-    // Count rides that are currently open (have queue time data and isOpen = true)
-    const openRideCount = allRides.filter((ride: any) => {
-      const currentQueueTime = this.getCurrentQueueTime(ride);
-      return currentQueueTime && currentQueueTime.isOpen;
-    }).length;
-
-    const operatingPercentage = Math.round((openRideCount / totalRideCount) * 100);
-    return operatingPercentage >= threshold;
+    return this.parkUtils.calculateParkOpenStatus(park, openThreshold);
   }
 
   /**
@@ -84,18 +64,29 @@ export class StatisticsService {
       .getMany();
 
     // Calculate park operating status
-    const openParks = allParks.filter(park => this.calculateParkOpenStatus(park, threshold));
+    const openParks = allParks.filter((park) =>
+      this.calculateParkOpenStatus(park, threshold),
+    );
     const openParksCount = openParks.length;
     const closedParksCount = totalParks - openParksCount;
 
     // Calculate park operating status by continent
-    const parksByContinent = await this.calculateParkOperatingByContinent(allParks, threshold);
+    const parksByContinent = await this.calculateParkOperatingByContinent(
+      allParks,
+      threshold,
+    );
 
     // Calculate park operating status by country (top 10)
-    const parksByCountry = await this.calculateParkOperatingByCountry(allParks, threshold);
+    const parksByCountry = await this.calculateParkOperatingByCountry(
+      allParks,
+      threshold,
+    );
 
     // Calculate ride statistics
-    const rideStatistics = await this.calculateRideStatistics(allParks, threshold);
+    const rideStatistics = await this.calculateRideStatistics(
+      allParks,
+      threshold,
+    );
 
     return {
       totalParks,
@@ -116,11 +107,14 @@ export class StatisticsService {
   /**
    * Calculate park operating status by continent
    */
-  private calculateParkOperatingByContinent(parks: any[], openThreshold?: number) {
+  private calculateParkOperatingByContinent(
+    parks: any[],
+    openThreshold?: number,
+  ) {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
     const continentStats = new Map();
 
-    parks.forEach(park => {
+    parks.forEach((park) => {
       const continent = park.continent;
       const isOpen = this.calculateParkOpenStatus(park, threshold);
 
@@ -147,11 +141,14 @@ export class StatisticsService {
   /**
    * Calculate park operating status by country (top 10)
    */
-  private calculateParkOperatingByCountry(parks: any[], openThreshold?: number) {
+  private calculateParkOperatingByCountry(
+    parks: any[],
+    openThreshold?: number,
+  ) {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
     const countryStats = new Map();
 
-    parks.forEach(park => {
+    parks.forEach((park) => {
       const country = park.country;
       const isOpen = this.calculateParkOpenStatus(park, threshold);
 
@@ -194,28 +191,33 @@ export class StatisticsService {
     };
 
     // Get all rides from all parks
-    const allRides = parks.flatMap(park => 
-      park.themeAreas.flatMap((themeArea: any) => 
+    const allRides = parks.flatMap((park) =>
+      park.themeAreas.flatMap((themeArea: any) =>
         themeArea.rides.map((ride: any) => ({
           ...ride,
-          park: { id: park.id, name: park.name, country: park.country, continent: park.continent }
-        }))
-      )
+          park: {
+            id: park.id,
+            name: park.name,
+            country: park.country,
+            continent: park.continent,
+          },
+        })),
+      ),
     );
 
     totalRides = allRides.length;
 
     // Calculate ride statistics
-    allRides.forEach(ride => {
+    allRides.forEach((ride) => {
       if (ride.isActive) activeRides++;
-      
+
       const currentQueueTime = this.getCurrentQueueTime(ride);
       if (currentQueueTime) {
         ridesWithQueueTimes++;
-        
+
         if (currentQueueTime.isOpen) {
           openRides++;
-          
+
           // Categorize wait times
           const waitTime = currentQueueTime.waitTime;
           if (waitTime <= 10) waitTimeDistribution['0-10']++;
@@ -252,7 +254,8 @@ export class StatisticsService {
       openRides,
       closedRides: ridesWithQueueTimes - openRides,
       ridesWithoutData: totalRides - ridesWithQueueTimes,
-      operatingPercentage: totalRides > 0 ? Math.round((openRides / totalRides) * 100) : 0,
+      operatingPercentage:
+        totalRides > 0 ? Math.round((openRides / totalRides) * 100) : 0,
       waitTimeDistribution,
       ridesByContinent,
       ridesByCountry,
@@ -269,20 +272,20 @@ export class StatisticsService {
   private calculateRidesByContinent(parks: any[]) {
     const continentStats = new Map();
 
-    parks.forEach(park => {
+    parks.forEach((park) => {
       const continent = park.continent;
-      
+
       if (!continentStats.has(continent)) {
         continentStats.set(continent, { total: 0, active: 0, open: 0 });
       }
 
       const stats = continentStats.get(continent);
-      
+
       park.themeAreas.forEach((themeArea: any) => {
         themeArea.rides.forEach((ride: any) => {
           stats.total++;
           if (ride.isActive) stats.active++;
-          
+
           const currentQueueTime = this.getCurrentQueueTime(ride);
           if (currentQueueTime && currentQueueTime.isOpen) {
             stats.open++;
@@ -297,7 +300,8 @@ export class StatisticsService {
         totalRides: stats.total,
         activeRides: stats.active,
         openRides: stats.open,
-        operatingPercentage: stats.total > 0 ? Math.round((stats.open / stats.total) * 100) : 0,
+        operatingPercentage:
+          stats.total > 0 ? Math.round((stats.open / stats.total) * 100) : 0,
       }))
       .sort((a, b) => b.totalRides - a.totalRides);
   }
@@ -308,20 +312,20 @@ export class StatisticsService {
   private calculateRidesByCountry(parks: any[]) {
     const countryStats = new Map();
 
-    parks.forEach(park => {
+    parks.forEach((park) => {
       const country = park.country;
-      
+
       if (!countryStats.has(country)) {
         countryStats.set(country, { total: 0, active: 0, open: 0 });
       }
 
       const stats = countryStats.get(country);
-      
+
       park.themeAreas.forEach((themeArea: any) => {
         themeArea.rides.forEach((ride: any) => {
           stats.total++;
           if (ride.isActive) stats.active++;
-          
+
           const currentQueueTime = this.getCurrentQueueTime(ride);
           if (currentQueueTime && currentQueueTime.isOpen) {
             stats.open++;
@@ -336,7 +340,8 @@ export class StatisticsService {
         totalRides: stats.total,
         activeRides: stats.active,
         openRides: stats.open,
-        operatingPercentage: stats.total > 0 ? Math.round((stats.open / stats.total) * 100) : 0,
+        operatingPercentage:
+          stats.total > 0 ? Math.round((stats.open / stats.total) * 100) : 0,
       }))
       .sort((a, b) => b.totalRides - a.totalRides)
       .slice(0, 10);
@@ -347,7 +352,7 @@ export class StatisticsService {
    */
   private getLongestWaitTimes(allRides: any[]) {
     return allRides
-      .map(ride => {
+      .map((ride) => {
         const currentQueueTime = this.getCurrentQueueTime(ride);
         return {
           rideId: ride.id,
@@ -360,7 +365,7 @@ export class StatisticsService {
           lastUpdated: currentQueueTime ? currentQueueTime.lastUpdated : null,
         };
       })
-      .filter(ride => ride.isOpen && ride.waitTime !== null)
+      .filter((ride) => ride.isOpen && ride.waitTime !== null)
       .sort((a, b) => (b.waitTime || 0) - (a.waitTime || 0))
       .slice(0, 5);
   }
@@ -370,7 +375,7 @@ export class StatisticsService {
    */
   private getShortestWaitTimes(allRides: any[]) {
     return allRides
-      .map(ride => {
+      .map((ride) => {
         const currentQueueTime = this.getCurrentQueueTime(ride);
         return {
           rideId: ride.id,
@@ -383,7 +388,7 @@ export class StatisticsService {
           lastUpdated: currentQueueTime ? currentQueueTime.lastUpdated : null,
         };
       })
-      .filter(ride => ride.isOpen && ride.waitTime !== null)
+      .filter((ride) => ride.isOpen && ride.waitTime !== null)
       .sort((a, b) => (a.waitTime || 0) - (b.waitTime || 0))
       .slice(0, 5);
   }
@@ -395,24 +400,26 @@ export class StatisticsService {
    */
   private getBusiestParks(parks: any[], openThreshold?: number) {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
-    
+
     return parks
-      .filter(park => this.calculateParkOpenStatus(park, threshold)) // Use provided threshold
-      .map(park => {
-        const allRides = park.themeAreas.flatMap((themeArea: any) => themeArea.rides);
-        
+      .filter((park) => this.calculateParkOpenStatus(park, threshold)) // Use provided threshold
+      .map((park) => {
+        const allRides = park.themeAreas.flatMap(
+          (themeArea: any) => themeArea.rides,
+        );
+
         // All open rides (for count and percentage) - match the logic in calculateParkOpenStatus
         const allOpenRides = allRides.filter((ride: any) => {
           const currentQueueTime = this.getCurrentQueueTime(ride);
           return currentQueueTime && currentQueueTime.isOpen;
         });
-        
+
         // Rides with waitTime data (for counting statistics)
         const ridesWithData = allOpenRides.filter((ride: any) => {
           const currentQueueTime = this.getCurrentQueueTime(ride);
           return currentQueueTime && currentQueueTime.waitTime !== null;
         });
-        
+
         // Only rides with meaningful wait times (> 0) for average calculation
         const ridesWithWaitTime = ridesWithData.filter((ride: any) => {
           const currentQueueTime = this.getCurrentQueueTime(ride);
@@ -423,12 +430,17 @@ export class StatisticsService {
           return null; // Skip parks with no open rides with wait time data
         }
 
-        const totalWaitTime = ridesWithWaitTime.reduce((sum: number, ride: any) => {
-          const currentQueueTime = this.getCurrentQueueTime(ride);
-          return sum + (currentQueueTime?.waitTime || 0);
-        }, 0);
+        const totalWaitTime = ridesWithWaitTime.reduce(
+          (sum: number, ride: any) => {
+            const currentQueueTime = this.getCurrentQueueTime(ride);
+            return sum + (currentQueueTime?.waitTime || 0);
+          },
+          0,
+        );
 
-        const averageWaitTime = Math.round(totalWaitTime / ridesWithWaitTime.length);
+        const averageWaitTime = Math.round(
+          totalWaitTime / ridesWithWaitTime.length,
+        );
 
         return {
           parkId: park.id,
@@ -438,10 +450,12 @@ export class StatisticsService {
           averageWaitTime,
           openRideCount: allOpenRides.length,
           totalRideCount: allRides.length,
-          operatingPercentage: Math.round((allOpenRides.length / allRides.length) * 100),
+          operatingPercentage: Math.round(
+            (allOpenRides.length / allRides.length) * 100,
+          ),
         };
       })
-      .filter(park => park !== null)
+      .filter((park) => park !== null)
       .sort((a, b) => b.averageWaitTime - a.averageWaitTime)
       .slice(0, 5);
   }
@@ -453,24 +467,26 @@ export class StatisticsService {
    */
   private getQuietestParks(parks: any[], openThreshold?: number) {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
-    
+
     return parks
-      .filter(park => this.calculateParkOpenStatus(park, threshold)) // Use provided threshold
-      .map(park => {
-        const allRides = park.themeAreas.flatMap((themeArea: any) => themeArea.rides);
-        
+      .filter((park) => this.calculateParkOpenStatus(park, threshold)) // Use provided threshold
+      .map((park) => {
+        const allRides = park.themeAreas.flatMap(
+          (themeArea: any) => themeArea.rides,
+        );
+
         // All open rides (for count and percentage) - match the logic in calculateParkOpenStatus
         const allOpenRides = allRides.filter((ride: any) => {
           const currentQueueTime = this.getCurrentQueueTime(ride);
           return currentQueueTime && currentQueueTime.isOpen;
         });
-        
+
         // Rides with waitTime data (for counting statistics)
         const ridesWithData = allOpenRides.filter((ride: any) => {
           const currentQueueTime = this.getCurrentQueueTime(ride);
           return currentQueueTime && currentQueueTime.waitTime !== null;
         });
-        
+
         // Only rides with meaningful wait times (> 0) for average calculation
         const ridesWithWaitTime = ridesWithData.filter((ride: any) => {
           const currentQueueTime = this.getCurrentQueueTime(ride);
@@ -481,12 +497,17 @@ export class StatisticsService {
           return null; // Skip parks with no open rides with wait time data
         }
 
-        const totalWaitTime = ridesWithWaitTime.reduce((sum: number, ride: any) => {
-          const currentQueueTime = this.getCurrentQueueTime(ride);
-          return sum + (currentQueueTime?.waitTime || 0);
-        }, 0);
+        const totalWaitTime = ridesWithWaitTime.reduce(
+          (sum: number, ride: any) => {
+            const currentQueueTime = this.getCurrentQueueTime(ride);
+            return sum + (currentQueueTime?.waitTime || 0);
+          },
+          0,
+        );
 
-        const averageWaitTime = Math.round(totalWaitTime / ridesWithWaitTime.length);
+        const averageWaitTime = Math.round(
+          totalWaitTime / ridesWithWaitTime.length,
+        );
 
         return {
           parkId: park.id,
@@ -496,10 +517,12 @@ export class StatisticsService {
           averageWaitTime,
           openRideCount: allOpenRides.length,
           totalRideCount: allRides.length,
-          operatingPercentage: Math.round((allOpenRides.length / allRides.length) * 100),
+          operatingPercentage: Math.round(
+            (allOpenRides.length / allRides.length) * 100,
+          ),
         };
       })
-      .filter(park => park !== null)
+      .filter((park) => park !== null)
       .sort((a, b) => a.averageWaitTime - b.averageWaitTime)
       .slice(0, 5);
   }
