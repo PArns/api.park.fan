@@ -1,316 +1,355 @@
 # 🎢 Park.Fan API
 
-A comprehensive REST API for theme park data, ride information, and real-time queue times. Built with NestJS and TypeScript, this API provides access to detailed information about theme parks worldwide, including their attractions and current wait times.
+The ultimate REST API for theme park data, ride information, and real-time queue times! 🚀
 
-## 🌟 Features
+Built with **NestJS** and **TypeScript** - a high-performance API providing comprehensive access to detailed information about theme parks worldwide, including their attractions and current wait times.
 
-- **🏰 Parks Management**: Complete information about theme parks worldwide
-- **🎠 Rides & Attractions**: Detailed ride data with theme area organization
-- **⏱️ Real-time Queue Times**: Live wait times for park attractions
-- **📊 Statistics**: Comprehensive park and ride statistics
-- **🔍 Advanced Search**: Filter parks by country, continent, or search terms
-- **🏁 Park Operating Status**: Intelligent park status detection based on ride availability
-- **📱 RESTful API**: Clean, intuitive API endpoints
-- **🔄 Automatic Updates**: Scheduled queue time updates from external sources
+## ✨ Features - What Makes This API Awesome
+
+- **🏰 Theme Parks**: Complete park information with geographic organization
+- **🎠 Rides & Attractions**: Detailed ride data organized by theme areas
+- **⏱️ Live Wait Times**: Real-time queue times with intelligent status detection
+- **📊 Advanced Statistics**: Comprehensive analytics with geographical breakdowns
+- **🔍 Smart Search & Filter**: Multi-criteria search across parks, rides, and locations
+- **🌍 Global Coverage**: Parks across multiple continents and countries
+- **📱 RESTful Design**: Clean, intuitive API endpoints with consistent responses
+- **🔄 Automatic Updates**: Scheduled queue time synchronization from external sources
+- **📈 Performance-Optimized**: Built for high throughput with efficient data structures
+- **🎯 Intelligent Park Status**: Automatic detection of whether parks are "open" or "closed"
+- **🏁 Top Lists**: Longest/shortest wait times, busiest/quietest parks
 
 ## 📊 Data Source
 
-This API utilizes data from **[queue-times.com](https://queue-times.com)**, providing reliable and up-to-date information about theme park wait times and attraction data.
+This API integrates with **[queue-times.com](https://queue-times.com)** to provide reliable and up-to-date information about theme park wait times and attraction data from around the world.
 
 ## 🌐 Live API
 
-The API is used at **[https://arns.dev](https://arns.dev)** - try it out with real theme park data!
+Experience the API live at **[https://api.park.fan](https://api.park.fan)** - test it with real theme park data and interactive documentation! 🎯
 
-## 🚀 Quick Start
+## 🚀 Quick Start - How to Get Going Fast!
 
 ### Prerequisites
 
-- Node.js (v18 or higher)
-- pnpm package manager
-- PostgreSQL database
+- **Node.js** v20.0.0 or higher 💚
+- **pnpm** package manager (recommended) 📦
+- **PostgreSQL** database (v12 or higher) 🐘
 
-### Installation
+### Installation & Setup
 
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd api.park.fan
 
-# Install dependencies
+# Install dependencies (pnpm is super fast!)
 pnpm install
 
-# Set up environment variables
+# Configure environment
 cp .env.example .env
 # Edit .env with your database credentials
 ```
 
-### Database Setup
+### Database Setup - It Couldn't Be Easier!
+
+The API creates the database automatically! Just ensure PostgreSQL is running:
 
 ```bash
-# Run database migrations
-pnpm run migration:run
-
-# Seed initial data (optional)
-pnpm run seed
+# The application automatically:
+# 1. 🔌 Connects to PostgreSQL
+# 2. 🏗️ Creates database if it doesn't exist
+# 3. 🚀 Executes migrations automatically
+# 4. 📡 Starts data synchronization
 ```
 
-### Running the Application
+### Starting the API - Let's Go! 🚀
 
 ```bash
-# Development mode with hot reload
+# Development Mode with Hot Reload (for development)
 pnpm run start:dev
 
-# Production mode
+# Production Build and Start
+pnpm run build
 pnpm run start:prod
 
-# Build for production
-pnpm run build
+# Debug Mode (for troubleshooting)
+pnpm run start:debug
 ```
 
-The API will be available at `http://localhost:3000`
+🎯 **API Ready!** Go to `http://localhost:3000` for interactive documentation
 
-## ⚙️ Configuration
+## ⚙️ Configuration - Make It Your Own!
 
-The API can be configured using environment variables. Copy `.env.example` to `.env` and adjust the values as needed.
+Configure the API using environment variables in your `.env` file:
 
-### Environment Variables
+### Important Environment Variables
 
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
-| `DB_HOST` | PostgreSQL database host | `localhost` | Yes |
-| `DB_PORT` | PostgreSQL database port | `5432` | Yes |
-| `DB_USER` | PostgreSQL username | `postgres` | Yes |
-| `DB_PASS` | PostgreSQL password | `postgres` | Yes |
-| `DB_NAME` | PostgreSQL database name | `parkfan` | Yes |
-| `PARK_OPEN_THRESHOLD_PERCENT` | Percentage threshold (0-100) to determine when a park is considered "open" | `50` | No |
+| `DB_HOST` | PostgreSQL Database Host | `localhost` | ✅ |
+| `DB_PORT` | PostgreSQL Database Port | `5432` | ✅ |
+| `DB_USER` | PostgreSQL Username | `postgres` | ✅ |
+| `DB_PASS` | PostgreSQL Password | `postgres` | ✅ |
+| `DB_NAME` | PostgreSQL Database Name | `parkfan` | ✅ |
+| `PARK_OPEN_THRESHOLD_PERCENT` | Park "open" threshold (0-100%) | `50` | ❌ |
 
-### Park Operating Status
+### 🎯 Park Operating Status Logic - The Core Feature!
 
-The `PARK_OPEN_THRESHOLD_PERCENT` variable controls how the API determines whether a park is "open" or "closed":
+The **Park Operating Status** feature intelligently determines whether a park is "open" or "closed":
 
-- **Default (50%)**: A park is considered open if at least 50% of its rides are currently operating
-- **Flexible Range**: You can set any value from 0-100 to match your requirements
-- **API Override**: Users can override this default by passing `?openThreshold=X` in API requests
+- **🎯 Threshold-based**: Parks are considered "open" when ≥ X% of rides are currently operating
+- **⚙️ Default**: 50% threshold (configurable via environment variable or API parameter)
+- **⚡ Real-time**: Based on current wait time data and ride operational status
+- **🔧 Flexible**: Override per request with `?openThreshold=X` parameter
 
-This affects:
-- Park operating status in `/statistics` endpoint
-- Busiest/quietest park calculations
-- Park filtering in analytics
+**Effects:**
+- 📊 Statistics endpoint park status calculations
+- 🏆 Busiest/quietest park rankings
+- 📈 Geographic operational status breakdowns
 
-## 📚 API Documentation
-
-### 🏰 Parks Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/parks` | Get all parks with pagination and filtering |
-| `GET` | `/parks/:id` | Get a specific park with rides and queue times |
-| `GET` | `/parks/:id/rides` | Get all rides for a specific park |
-
-### 🎠 Rides Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/rides` | Get all rides with filtering and pagination |
-| `GET` | `/rides/:id` | Get a specific ride with current queue time |
-
-### 📊 Statistics & Data Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/statistics` | Get comprehensive park and ride statistics with operating status |
-| `GET` | `/countries` | Get list of all countries with parks |
-| `GET` | `/continents` | Get list of all continents with parks |
-
-### ⏱️ Queue Times Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/queue-times/statistics` | Get queue time statistics and analytics |
-
-### 🔍 System Status
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/status` | Check API health and system status |
-
-### Query Parameters
-
-#### Parks Filtering (`/parks`)
-- `search` - Search parks by name or country
-- `country` - Filter by specific country (e.g., `?country=Germany`)
-- `continent` - Filter by specific continent (e.g., `?continent=Europe`)
-- `parkGroupId` - Filter by park group ID
-- `openThreshold` - Percentage threshold for park to be considered "open" (0-100, default: 50)
-- `page` - Page number for pagination (default: 1)
-- `limit` - Results per page (default: 10, max: 100)
-
-#### Rides Filtering (`/rides`)
-- `search` - Search rides by name (e.g., `?search=coaster`)
-- `parkId` - Filter rides by specific park ID
-- `isActive` - Filter by ride status (true/false)
-- `page` - Page number for pagination (default: 1)
-- `limit` - Results per page (default: 10, max: 100)
-
-#### Statistics Parameters (`/statistics`)
-- `openThreshold` - Percentage threshold for park to be considered "open" (0-100, default: 50)
-
-### Example Requests
-
-#### Get Parks with Country Filtering
+**Examples:**
 ```bash
-GET https://park.fan/parks?country=Germany&page=1&limit=5
+# Use standard 50% threshold
+GET /statistics
+
+# Custom 75% threshold for stricter "open" definition
+GET /statistics?openThreshold=75
+
+# Relaxed 25% threshold
+GET /parks?openThreshold=25
 ```
 
-#### Search for Coaster Rides
+## 🎯 API Endpoints - Where the Magic Happens!
+
+### 🏠 Home & Documentation
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/` | 📖 Interactive API documentation (HTML) - Beautifully formatted! |
+| `GET` | `/readme` | 📄 Raw documentation (Markdown) |
+
+### 🏰 Parks - The Theme Parks!
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/parks` | 🌟 All parks with advanced filters & pagination |
+| `GET` | `/parks/:id` | 🎯 Specific park with all ride details |
+| `GET` | `/parks/:id/rides` | 🎠 All rides for a specific park |
+
+### 🎠 Rides - The Attractions!
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/rides` | 🔍 All rides with filtering & search |
+| `GET` | `/rides/:id` | 🎯 Specific ride with current queue status |
+
+### 📊 Statistics & Analytics - The Insights!
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/statistics` | 📈 Comprehensive statistics with geographic breakdowns |
+| `GET` | `/queue-times/statistics` | ⏱️ Wait time analytics and insights |
+
+### 🌍 Geographic Data
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/countries` | 🇩🇪 All countries with park counts |
+| `GET` | `/continents` | 🌎 All continents with park counts |
+
+### ⚡ System Status
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/status` | 💚 API health check and system information |
+
+## 🔍 Query Parameters & Filtering - Find Exactly What You Want!
+
+### 🏰 Parks Filtering (`/parks`)
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `search` | `string` | Search by park name or country | `?search=Disney` |
+| `country` | `string` | Filter by specific country | `?country=Germany` |
+| `continent` | `string` | Filter by continent | `?continent=Europe` |
+| `parkGroupId` | `number` | Filter by park group | `?parkGroupId=1` |
+| `openThreshold` | `number` | Operational status threshold (0-100) | `?openThreshold=75` |
+| `page` | `number` | Page number (≥1) | `?page=2` |
+| `limit` | `number` | Results per page (max 100) | `?limit=20` |
+
+### 🎠 Rides Filtering (`/rides`)
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `search` | `string` | Search by ride name | `?search=coaster` |
+| `parkId` | `number` | Filter by specific park | `?parkId=25` |
+| `isActive` | `boolean` | Filter by operational status | `?isActive=true` |
+| `page` | `number` | Page number (≥1) | `?page=3` |
+| `limit` | `number` | Results per page (max 100) | `?limit=50` |
+
+### 📊 Statistics Parameters (`/statistics`)
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `openThreshold` | `number` | Park operational threshold (0-100) | `?openThreshold=60` |
+
+## 🚀 Example API Calls
+
+### 🔍 Search & Filter Parks
+
 ```bash
-GET https://park.fan/rides?search=coaster&limit=10
+# Find Disney parks worldwide
+GET https://api.park.fan/parks?search=Disney&limit=10
+
+# All German parks
+GET https://api.park.fan/parks?country=Germany
+
+# European parks with relaxed "open" criteria
+GET https://api.park.fan/parks?continent=Europe&openThreshold=25
+
+# Parks in a specific group with pagination
+GET https://api.park.fan/parks?parkGroupId=1&page=2&limit=5
 ```
 
-#### Get All Rides for a Specific Park
+### 🎢 Discover Rides
+
 ```bash
-GET https://park.fan/parks/1/rides
+# Search for roller coasters
+GET https://api.park.fan/rides?search=coaster&limit=20
+
+# All rides at Disneyland Paris
+GET https://api.park.fan/parks/26/rides
+
+# Active rides only with pagination
+GET https://api.park.fan/rides?isActive=true&page=1&limit=25
 ```
 
-### 🏁 Park Operating Status
+### 📊 Analytics & Statistics
 
-All park endpoints now include an `operatingStatus` field that intelligently determines if a park is open based on the percentage of rides that are currently operating.
+```bash
+# Global theme park statistics
+GET https://api.park.fan/statistics
 
-#### How It Works
-- **Threshold-based**: Parks are considered "open" when at least X% of their rides are open
-- **Default Threshold**: 50% (configurable via `openThreshold` parameter)
-- **Real-time Data**: Based on current queue time data and ride availability
+# Statistics with strict "open" criteria (75%)
+GET https://api.park.fan/statistics?openThreshold=75
 
-#### Operating Status Response
+# Queue time insights and analytics
+GET https://api.park.fan/queue-times/statistics
+```
+
+### 🌍 Geographic Exploration
+
+```bash
+# All countries with parks
+GET https://api.park.fan/countries
+
+# Continental breakdown
+GET https://api.park.fan/continents
+```
+
+## 📋 Response Examples
+
+### 🏰 Park Details with Operating Status
+
+```bash
+GET https://api.park.fan/parks/25
+```
+
 ```json
 {
+  "id": 25,
+  "name": "Disneyland Park",
+  "country": "United States",
+  "continent": "North America",
+  "timezone": "America/Los_Angeles",
+  "latitude": 33.8121,
+  "longitude": -117.919,
+  "isActive": true,
   "operatingStatus": {
     "isOpen": true,
-    "openRideCount": 25,
-    "totalRideCount": 39,
-    "operatingPercentage": 64
-  }
+    "openRideCount": 42,
+    "totalRideCount": 58,
+    "operatingPercentage": 72.4,
+    "openThreshold": 50
+  },
+  "themeAreas": [
+    {
+      "id": 123,
+      "name": "Fantasyland",
+      "rides": [...]
+    }
+  ]
 }
 ```
 
-#### Examples
+### 🎠 Ride with Current Queue Status
 
-**Check park with default 50% threshold:**
 ```bash
-GET https://park.fan/parks/25
+GET https://api.park.fan/rides/1847
 ```
 
-**Check park with custom 25% threshold:**
-```bash
-GET https://park.fan/parks/25?openThreshold=25
-```
-
-**Find all parks that are open (75% threshold):**
-```bash
-GET https://park.fan/parks?openThreshold=75
-```
-
-#### Get Specific Ride Details
-```bash
-GET https://park.fan/rides/1
-```
-
-**Response:**
 ```json
 {
-  "id": 1,
-  "name": "Demon",
+  "id": 1847,
+  "name": "Space Mountain",
   "isActive": true,
   "park": {
-    "id": 1,
-    "name": "California's Great America",
+    "id": 25,
+    "name": "Disneyland Park",
     "country": "United States",
     "continent": "North America"
   },
   "themeArea": {
-    "id": 1,
-    "name": "Coasters"
+    "id": 128,
+    "name": "Tomorrowland"
   },
   "currentQueueTime": {
-    "waitTime": 15,
+    "waitTime": 45,
     "isOpen": true,
-    "lastUpdated": "2025-06-03T20:00:44.000Z"
+    "lastUpdated": "2023-06-04T18:15:33.000Z"
   }
 }
 ```
 
-#### Get Statistics
+### 📊 Comprehensive Statistics
+
 ```bash
-GET https://park.fan/statistics
+GET https://api.park.fan/statistics
 ```
 
-**Response:**
 ```json
 {
-  "totalParks": 133,
-  "totalThemeAreas": 422,
-  "totalRides": 4164,
+  "totalParks": 145,
+  "totalThemeAreas": 486,
+  "totalRides": 4521,
   "parkOperatingStatus": {
-    "openParks": 53,
-    "closedParks": 80,
-    "operatingPercentage": 40,
+    "openParks": 67,
+    "closedParks": 78,
+    "operatingPercentage": 46.2,
     "openThreshold": 50
   },
   "rideStatistics": {
-    "totalRides": 2683,
-    "activeRides": 2683,
-    "inactiveRides": 0,
-    "openRides": 1548,
-    "closedRides": 1135,
-    "ridesWithoutData": 0,
-    "operatingPercentage": 58,
+    "totalRides": 2847,
+    "activeRides": 2847,
+    "openRides": 1692,
+    "closedRides": 1155,
+    "operatingPercentage": 59.4,
     "waitTimeDistribution": {
-      "0-10": 1320,
-      "11-30": 136,
-      "31-60": 70,
-      "61-120": 21,
-      "120+": 1
+      "0-10": 1425,
+      "11-30": 187,
+      "31-60": 58,
+      "61-120": 19,
+      "120+": 3
     },
-    "ridesByContinent": [
-      {
-        "continent": "North America",
-        "totalRides": 2036,
-        "activeRides": 2036,
-        "openRides": 1423,
-        "operatingPercentage": 70
-      }
-    ],
-    "ridesByCountry": [
-      {
-        "country": "United States",
-        "totalRides": 1858,
-        "activeRides": 1858,
-        "openRides": 1271,
-        "operatingPercentage": 68
-      }
-    ],
     "longestWaitTimes": [
       {
         "rideId": 2407,
-        "rideName": "Radiator Springs Racers",
-        "parkId": 123,
+        "rideName": "Guardians of the Galaxy: Mission Breakout!",
+        "parkId": 124,
         "parkName": "Disney California Adventure",
         "country": "United States",
-        "waitTime": 125,
+        "waitTime": 135,
         "isOpen": true,
-        "lastUpdated": "2025-06-04T16:21:39.000Z"
-      }
-    ],
-    "shortestWaitTimes": [
-      {
-        "rideId": 1445,
-        "rideName": "Backlot Stunt Coaster",
-        "parkId": 81,
-        "parkName": "Canada's Wonderland",
-        "country": "Canada",
-        "waitTime": 0,
-        "isOpen": true,
-        "lastUpdated": "2025-06-04T16:25:46.000Z"
+        "lastUpdated": "2023-06-04T18:20:15.000Z"
       }
     ],
     "busiestParks": [
@@ -319,162 +358,73 @@ GET https://park.fan/statistics
         "parkName": "Epic Universe",
         "country": "United States",
         "continent": "North America",
-        "averageWaitTime": 40,
-        "openRideCount": 18,
-        "totalRideCount": 19,
-        "operatingPercentage": 95
-      }
-    ],
-    "quietestParks": [
-      {
-        "parkId": 98,
-        "parkName": "Worlds of Fun",
-        "country": "United States",
-        "continent": "North America",
-        "averageWaitTime": 0,
-        "openRideCount": 25,
-        "totalRideCount": 25,
-        "operatingPercentage": 100
+        "averageWaitTime": 52,
+        "openRideCount": 21,
+        "totalRideCount": 23,
+        "operatingPercentage": 91.3
       }
     ]
   },
   "parksByContinent": [
     {
       "continent": "North America",
-      "totalParks": 69,
-      "openParks": 47,
-      "closedParks": 22,
-      "operatingPercentage": 68
-    },
-    {
-      "continent": "Europe",
-      "totalParks": 46,
-      "openParks": 6,
-      "closedParks": 40,
-      "operatingPercentage": 13
-    }
-  ],
-  "parksByCountry": [
-    {
-      "country": "United States",
-      "totalParks": 66,
-      "openParks": 44,
-      "closedParks": 22,
-      "operatingPercentage": 67
-    },
-    {
-      "country": "France",
-      "totalParks": 9,
-      "openParks": 2,
-      "closedParks": 7,
-      "operatingPercentage": 22
+      "totalParks": 84,
+      "openParks": 58,
+      "closedParks": 26,
+      "operatingPercentage": 69.0
     }
   ]
 }
 ```
 
-#### Get Statistics with Custom Threshold
-```bash
-GET https://park.fan/statistics?openThreshold=25
-```
+## 🏗️ Architecture & Technology
 
-### 🎢 Comprehensive Ride Statistics
+### 🛠️ Technology Stack
 
-The statistics endpoint now provides detailed ride analytics including:
+- **🚀 Framework**: NestJS (Node.js)
+- **💪 Language**: TypeScript
+- **🗄️ Database**: PostgreSQL
+- **🔄 ORM**: TypeORM
+- **📦 Package Manager**: pnpm
+- **✅ Validation**: class-validator & class-transformer
+- **📊 Data Source**: queue-times.com API integration
 
-#### Key Metrics
-- **Total, Active, and Operating Ride Counts**: Real-time statistics on ride availability
-- **Wait Time Distribution**: Categorized by time ranges (0-10, 11-30, 31-60, 61-120, 120+ minutes)
-- **Geographic Analysis**: Ride statistics broken down by continent and country
-- **Top Lists**: Longest and shortest wait times across all parks
-
-#### Wait Time Distribution
-Rides are automatically categorized into wait time buckets:
-- **0-10 minutes**: Walk-on attractions and short waits
-- **11-30 minutes**: Moderate wait times
-- **31-60 minutes**: Popular attractions with longer waits
-- **61-120 minutes**: High-demand attractions
-- **120+ minutes**: Peak popularity rides
-
-#### Geographic Breakdown
-- **By Continent**: Total rides, active rides, open rides, and operating percentages
-- **By Country**: Top 10 countries with the most rides and their operating statistics
-
-#### Real-time Top Lists
-- **Longest Wait Times**: Top 5 rides with the highest current wait times
-- **Shortest Wait Times**: Top 5 open rides with the lowest wait times (perfect for walk-ons!)
-- **Busiest Parks**: Top 5 parks with the highest average wait times across all open rides
-- **Quietest Parks**: Top 5 parks with the lowest average wait times across all open rides
-- **Direct Navigation**: Each entry includes `rideId`/`parkId` for easy API navigation to specific rides and parks
-
-#### Navigation Examples
-Use the IDs from the top lists to get detailed information:
-```bash
-# Get details for the ride with longest wait time
-GET https://park.fan/rides/{rideId}
-
-# Get details for the park containing that ride
-GET https://park.fan/parks/{parkId}
-
-# Get all rides in that park
-GET https://park.fan/parks/{parkId}/rides
-
-# Navigate to busiest/quietest parks directly
-GET https://park.fan/parks/{parkId}    # from busiestParks or quietestParks
-```
-
-#### Example: Current Ride Insights
-```json
-{
-  "rideStatistics": {
-    "totalRides": 2683,
-    "operatingPercentage": 58,
-    "waitTimeDistribution": {
-      "0-10": 1320,    // 85% of open rides have short waits!
-      "11-30": 136,
-      "31-60": 70,
-      "61-120": 21,
-      "120+": 1
-    },
-    "longestWaitTimes": [
-      {
-        "rideName": "Radiator Springs Racers",
-        "waitTime": 125,
-        "parkName": "Disney California Adventure"
-      }
-    ]
-  }
-}
-```
-
-## 🏗️ Architecture
-
-### Technology Stack
-
-- **Framework**: NestJS
-- **Language**: TypeScript
-- **Database**: PostgreSQL
-- **ORM**: TypeORM
-- **Package Manager**: pnpm
-- **Validation**: class-validator
-
-### Project Structure
+### 📁 Project Structure
 
 ```
 src/
 ├── modules/
-│   ├── parks/              # Parks management and park-specific operations
-│   ├── rides/              # Rides endpoints with filtering and search
-│   ├── statistics/         # Statistics and analytics endpoints
-│   ├── countries/          # Countries data endpoints
-│   ├── continents/         # Continents data endpoints
-│   ├── queue-times/        # Queue times statistics and analytics
-│   ├── queue-times-parser/ # Data parsing and updates
-│   ├── database/           # Database configuration
-│   └── status/             # Health checks and system status
-├── app.module.ts
-└── main.ts
+│   ├── parks/              # 🏰 Parks, rides, and theme areas
+│   │   ├── parks.controller.ts
+│   │   ├── parks.service.ts
+│   │   ├── park.entity.ts
+│   │   ├── ride.entity.ts
+│   │   ├── theme-area.entity.ts
+│   │   ├── queue-time.entity.ts
+│   │   └── park-group.entity.ts
+│   ├── rides/              # 🎠 Ride-specific endpoints
+│   ├── statistics/         # 📊 Analytics and insights
+│   ├── countries/          # 🌍 Geographic data (countries)
+│   ├── continents/         # 🌎 Geographic data (continents)
+│   ├── queue-times/        # ⏱️ Queue time statistics
+│   ├── queue-times-parser/ # 🔄 Data synchronization
+│   ├── status/             # ⚡ Health checks
+│   ├── database/           # 🗄️ Database configuration
+│   ├── index/              # 🏠 Documentation rendering
+│   └── utils/              # 🛠️ Shared utilities
+├── types/                  # 📝 TypeScript type definitions
+├── app.module.ts           # 🔧 Main application module
+└── main.ts                 # 🚀 Application bootstrap
 ```
+
+### 🔄 Data Flow
+
+1. **📡 External API Integration**: Connects to queue-times.com API
+2. **🔄 Automated Synchronization**: Scheduled updates of park and ride data
+3. **🗄️ Database Storage**: PostgreSQL with optimized schema
+4. **📊 Real-time Analytics**: Live statistics and operating status
+5. **🎯 RESTful API**: Clean endpoints with intelligent caching
+6. **📱 Response Formatting**: Consistent JSON responses with rich metadata
 
 ## 🔄 Data Updates
 
@@ -506,10 +456,9 @@ pnpm run start:debug    # Start with debugging
 pnpm run build          # Build for production
 pnpm run start:prod     # Run production build
 
-# Testing
-pnpm run test           # Run unit tests
-pnpm run test:e2e       # Run e2e tests
-pnpm run test:cov       # Test coverage
+# Building
+pnpm run build          # Build for production
+pnpm run start:prod     # Run production build
 ```
 
 ## 🐳 Docker Support
