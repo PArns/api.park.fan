@@ -148,7 +148,6 @@ GET /parks?openThreshold=25
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/statistics` | 📈 Comprehensive statistics with geographic breakdowns |
-| `GET` | `/queue-times/statistics` | ⏱️ Wait time analytics and insights |
 
 ### 🌍 Geographic Data
 
@@ -232,9 +231,6 @@ GET https://api.park.fan/statistics
 
 # Statistics with strict "open" criteria (75%)
 GET https://api.park.fan/statistics?openThreshold=75
-
-# Queue time insights and analytics
-GET https://api.park.fan/queue-times/statistics
 ```
 
 ### 🌍 Geographic Exploration
@@ -407,7 +403,6 @@ src/
 │   ├── statistics/         # 📊 Analytics and insights
 │   ├── countries/          # 🌍 Geographic data (countries)
 │   ├── continents/         # 🌎 Geographic data (continents)
-│   ├── queue-times/        # ⏱️ Queue time statistics
 │   ├── queue-times-parser/ # 🔄 Data synchronization
 │   ├── status/             # ⚡ Health checks
 │   ├── database/           # 🗄️ Database configuration

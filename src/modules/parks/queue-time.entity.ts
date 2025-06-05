@@ -20,7 +20,12 @@ export class QueueTime {
   })
   ride: Ride;
 
-  @Column('int')
+  @Column('int', {
+    transformer: {
+      to: (value: number) => Math.max(0, value),
+      from: (value: number) => value,
+    },
+  })
   waitTime: number;
 
   @Column({ default: true })

@@ -53,16 +53,20 @@ async function bootstrap(): Promise<void> {
   // Now start the app - TypeORM can now connect successfully
   const app = await NestFactory.create(AppModule);
   const port = process.env.PORT || 3000;
-  
+
   // Import the CacheControlInterceptor from UtilsModule
-  const { CacheControlInterceptor } = await import('./modules/utils/cache-control.interceptor.js');
-  
+  const { CacheControlInterceptor } = await import(
+    './modules/utils/cache-control.interceptor.js'
+  );
+
   // Register the cache interceptor globally
   app.useGlobalInterceptors(new CacheControlInterceptor());
-  
+
   // Log that cache headers are enabled
   const logger = new Logger('Bootstrap');
-  logger.log('Cache-Control headers enabled with TTL of 300 seconds (5 minutes)');
+  logger.log(
+    'Cache-Control headers enabled with TTL of 300 seconds (5 minutes)',
+  );
 
   await app.listen(port);
 }

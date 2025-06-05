@@ -7,7 +7,6 @@ import { RidesModule } from './modules/rides/rides.module';
 import { StatisticsModule } from './modules/statistics/statistics.module';
 import { CountriesModule } from './modules/countries/countries.module';
 import { ContinentsModule } from './modules/continents/continents.module';
-import { QueueTimesModule } from './modules/queue-times/queue-times.module';
 import { QueueTimesParserModule } from './modules/queue-times-parser/queue-times-parser.module';
 import { UtilsModule } from './modules/utils/utils.module';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -39,7 +38,6 @@ import { IndexModule } from './modules/index/index.module';
     StatisticsModule,
     CountriesModule,
     ContinentsModule,
-    QueueTimesModule,
     QueueTimesParserModule,
     UtilsModule,
     IndexModule,

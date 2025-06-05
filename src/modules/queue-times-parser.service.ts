@@ -120,7 +120,7 @@ export class QueueTimesParserService {
             if (rideData.is_open && typeof rideData.wait_time === 'number') {
               const queueTime = this.queueTimeRepository.create({
                 ride: ride,
-                waitTime: rideData.wait_time,
+                waitTime: Math.max(0, rideData.wait_time),
                 isOpen: rideData.is_open,
                 lastUpdated: rideData.last_updated
                   ? new Date(rideData.last_updated)

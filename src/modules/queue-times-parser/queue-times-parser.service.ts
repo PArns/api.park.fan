@@ -234,33 +234,6 @@ export class QueueTimesParserService {
   }
 
   /**
-   * Batch check for existing queue times to improve performance
-   * @param rideId The ride ID to check
-   * @param timestamps Array of timestamps to check
-   * @returns Set of existing timestamps
-   */
-  private async getExistingQueueTimeTimestamps(
-    rideId: number,
-    timestamps: Date[],
-  ): Promise<Set<string>> {
-    if (timestamps.length === 0) return new Set();
-
-    const existingTimes = await this.queueTimeRepository.find({
-      where: {
-        ride: { id: rideId },
-        lastUpdated: timestamps.length === 1 ? timestamps[0] : undefined,
-      },
-      select: ['lastUpdated', 'waitTime'],
-    });
-
-    return new Set(
-      existingTimes.map(
-        (qt) => `${qt.lastUpdated.toISOString()}_${qt.waitTime}`,
-      ),
-    );
-  }
-
-  /**
    * Get statistics about queue time data to monitor duplicate prevention effectiveness
    * @returns Object with various statistics
    */
@@ -268,7 +241,6 @@ export class QueueTimesParserService {
     totalEntries: number;
     uniqueTimestamps: number;
     duplicatePreventionRate: number;
-    entriesPerRide: { rideName: string; count: number }[];
   }> {
     const totalEntries = await this.queueTimeRepository.count();
 
@@ -276,16 +248,6 @@ export class QueueTimesParserService {
       .createQueryBuilder('qt')
       .select('COUNT(DISTINCT qt.lastUpdated)', 'count')
       .getRawOne();
-
-    const entriesPerRide = await this.queueTimeRepository
-      .createQueryBuilder('qt')
-      .leftJoin('qt.ride', 'ride')
-      .select('ride.name', 'rideName')
-      .addSelect('COUNT(qt.id)', 'count')
-      .groupBy('ride.name')
-      .orderBy('count', 'DESC')
-      .limit(10)
-      .getRawMany();
 
     const duplicatePreventionRate =
       totalEntries > 0
@@ -297,10 +259,6 @@ export class QueueTimesParserService {
       totalEntries,
       uniqueTimestamps: parseInt(uniqueTimestamps.count),
       duplicatePreventionRate: Math.round(duplicatePreventionRate * 100) / 100,
-      entriesPerRide: entriesPerRide.map((item) => ({
-        rideName: item.rideName,
-        count: parseInt(item.count),
-      })),
     };
   }
 
@@ -377,7 +335,7 @@ export class QueueTimesParserService {
             where: {
               ride: { id: ride.id },
               lastUpdated: lastUpdatedTime,
-              waitTime: rideData.wait_time,
+              waitTime: Math.max(0, rideData.wait_time),
             },
             order: { recordedAt: 'DESC' },
           });
@@ -386,7 +344,7 @@ export class QueueTimesParserService {
           if (!existingQueueTime) {
             const queueTime = this.queueTimeRepository.create({
               ride: ride,
-              waitTime: rideData.wait_time,
+              waitTime: Math.max(0, rideData.wait_time),
               isOpen: rideData.is_open,
               lastUpdated: lastUpdatedTime,
               recordedAt: new Date(),
