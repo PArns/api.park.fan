@@ -1,5 +1,12 @@
-import { IsOptional, IsString, IsNumber, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsOptional,
+  IsString,
+  IsNumber,
+  IsBoolean,
+  Min,
+  Max,
+} from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 
 export class RideQueryDto {
   @IsOptional()
@@ -10,6 +17,15 @@ export class RideQueryDto {
   @Type(() => Number)
   @IsNumber()
   parkId?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  isActive?: boolean = true; // Default to true (only active rides)
 
   @IsOptional()
   @Type(() => Number)

@@ -1,4 +1,5 @@
 import { IsString, IsNumber, IsOptional, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class ParkQueryDto {
   @IsOptional()
@@ -14,18 +15,25 @@ export class ParkQueryDto {
   continent?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   parkGroupId?: number;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
-  page?: number;
+  @Min(1)
+  page?: number = 1;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
-  limit?: number;
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   @Max(100)

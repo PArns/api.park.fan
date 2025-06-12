@@ -25,7 +25,7 @@ export class RidesService {
    * Get all rides with optional filtering
    */
   async findAll(query: RideQueryDto = {}) {
-    const { search, parkId, page = 1, limit = 50 } = query;
+    const { search, parkId, isActive = true, page = 1, limit = 50 } = query;
 
     const queryBuilder = this.rideRepository
       .createQueryBuilder('ride')
@@ -48,8 +48,8 @@ export class RidesService {
       queryBuilder.andWhere('ride.park.id = :parkId', { parkId });
     }
 
-    // Only include active rides
-    queryBuilder.andWhere('ride.isActive = :isActive', { isActive: true });
+    // Filter by active status (defaults to true)
+    queryBuilder.andWhere('ride.isActive = :isActive', { isActive });
 
     // Apply pagination
     const offset = (page - 1) * limit;
@@ -69,6 +69,8 @@ export class RidesService {
       park: {
         id: ride.park.id,
         name: ride.park.name,
+        continent: ride.park.continent,
+        country: ride.park.country,
       },
       themeArea: ride.themeArea
         ? {

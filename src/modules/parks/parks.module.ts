@@ -5,9 +5,10 @@ import { Park } from './park.entity';
 import { ThemeArea } from './theme-area.entity';
 import { Ride } from './ride.entity';
 import { QueueTime } from './queue-time.entity';
-import { ParksController } from './parks.controller';
+import { ParksController } from './parks.controller.js';
 import { ParksService } from './parks.service';
 import { QueueTimesParserService } from '../queue-times-parser/queue-times-parser.service';
+import { RidesService } from '../rides/rides.service';
 import { UtilsModule } from '../utils/utils.module';
 
 @Module({
@@ -16,7 +17,7 @@ import { UtilsModule } from '../utils/utils.module';
     UtilsModule,
   ],
   controllers: [ParksController],
-  providers: [ParksService, QueueTimesParserService],
+  providers: [ParksService, RidesService, QueueTimesParserService],
   exports: [TypeOrmModule, ParksService],
 })
 export class ParksModule {}

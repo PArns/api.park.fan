@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { Client } from 'pg';
 
 async function createDatabaseIfNotExists() {
@@ -54,6 +54,18 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const port = process.env.PORT || 3000;
 
+  // Enable global validation pipe with transformation
+  app.useGlobalPipes(
+    new ValidationPipe({
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+      whitelist: true,
+      forbidNonWhitelisted: false,
+    }),
+  );
+
   // Import the CacheControlInterceptor from UtilsModule
   const { CacheControlInterceptor } = await import(
     './modules/utils/cache-control.interceptor.js'
@@ -67,6 +79,7 @@ async function bootstrap(): Promise<void> {
   logger.log(
     'Cache-Control headers enabled with TTL of 300 seconds (5 minutes)',
   );
+  logger.log('Global validation pipe enabled with transformation');
 
   await app.listen(port);
 }

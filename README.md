@@ -136,6 +136,34 @@ GET /parks?openThreshold=25
 | `GET` | `/parks/:id` | 🎯 Specific park with all ride details |
 | `GET` | `/parks/:id/rides` | 🎠 All rides for a specific park |
 
+### 🗺️ Hierarchical Routes - Navigate by Location!
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/parks/:continent` | 🌍 All parks in a continent |
+| `GET` | `/parks/:continent/:country` | 🇩🇪 All parks in a country |
+| `GET` | `/parks/:continent/:country/:park` | 🏰 Access park via hierarchical path |
+| `GET` | `/parks/:continent/:country/:park/:ride` | 🎢 Access ride via hierarchical path |
+
+**Smart Routing:**
+- Numeric IDs are automatically detected (e.g., `/parks/30` → Park by ID)
+- String parameters are treated as hierarchical paths
+- Full backward compatibility maintained
+
+**URL Transformation Rules:**
+- Spaces replaced with hyphens (`-`)
+- Dots (`.`) removed entirely
+- All lowercase
+- Special characters removed
+
+**Examples:**
+- All European parks → `/parks/europe`
+- All German parks → `/parks/europe/germany`
+- `Phantasialand` → `/parks/europe/germany/phantasialand`
+- `Europa Park` → `/parks/europe/germany/europa-park`
+- `Islands Of Adventure At Universal Orlando` → `/parks/north-america/united-states/islands-of-adventure-at-universal-orlando`
+- `Taron` ride → `/parks/europe/germany/phantasialand/taron`
+
 ### 🎠 Rides - The Attractions!
 
 | Method | Endpoint | Description |
@@ -210,6 +238,31 @@ GET https://api.park.fan/parks?continent=Europe&openThreshold=25
 GET https://api.park.fan/parks?parkGroupId=1&page=2&limit=5
 ```
 
+### 🗺️ Hierarchical Navigation
+
+```bash
+# Get all parks in Europe
+GET https://api.park.fan/parks/europe
+
+# Get all parks in Germany
+GET https://api.park.fan/parks/europe/germany
+
+# Access Phantasialand via hierarchical path
+GET https://api.park.fan/parks/europe/germany/phantasialand
+
+# Access specific ride via hierarchical path
+GET https://api.park.fan/parks/europe/germany/phantasialand/taron
+
+# Access parks with complex names
+GET https://api.park.fan/parks/north-america/united-states/islands-of-adventure-at-universal-orlando
+
+# Access European park
+GET https://api.park.fan/parks/europe/england/alton-towers/the-smiler
+
+# Backward compatibility - access by ID
+GET https://api.park.fan/parks/61
+```
+
 ### 🎢 Discover Rides
 
 ```bash
@@ -275,6 +328,60 @@ GET https://api.park.fan/parks/25
       "rides": [...]
     }
   ]
+}
+```
+
+### 🗺️ Hierarchical Park Access
+
+```bash
+GET https://api.park.fan/parks/europe/germany/phantasialand
+```
+
+```json
+{
+  "id": 61,
+  "name": "Phantasialand",
+  "country": "Germany",
+  "continent": "Europe",
+  "hierarchicalUrl": "/parks/europe/germany/phantasialand",
+  "operatingStatus": {
+    "isOpen": false,
+    "openRideCount": 0,
+    "totalRideCount": 33,
+    "operatingPercentage": 0
+  },
+  "themeAreas": [...]
+}
+```
+
+### 🎢 Hierarchical Ride Access
+
+```bash
+GET https://api.park.fan/parks/europe/germany/phantasialand/taron
+```
+
+```json
+{
+  "id": 1330,
+  "name": "Taron",
+  "isActive": true,
+  "hierarchicalUrl": "/parks/europe/germany/phantasialand/taron",
+  "park": {
+    "id": 61,
+    "name": "Phantasialand",
+    "country": "Germany",
+    "continent": "Europe",
+    "hierarchicalUrl": "/parks/europe/germany/phantasialand"
+  },
+  "themeArea": {
+    "id": 195,
+    "name": "Mystery"
+  },
+  "currentQueueTime": {
+    "waitTime": 0,
+    "isOpen": false,
+    "lastUpdated": "2025-06-12T17:02:18Z"
+  }
 }
 ```
 
