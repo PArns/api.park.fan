@@ -1,0 +1,775 @@
+openapi: 3.0.3
+info:
+  title: Park.Fan API
+  description: |
+    # 🎢 Park.Fan API - Theme Park Data & Real-Time Wait Times
+
+    The Park.Fan API provides comprehensive theme park data with real-time wait times, intelligent park status detection, and hierarchical navigation. Built with modern web technologies and designed for theme park enthusiasts and developers.
+
+    ## 🌟 Key Features
+
+    - **Real-time Data**: Live wait times and ride status updates
+    - **Intelligent Park Status**: Dynamic "open" vs "closed" detection based on ride availability
+    - **Hierarchical Navigation**: Access parks by continent, country, and park name
+    - **Advanced Filtering**: Filter by status, location, and operational parameters
+    - **Type-Safe API**: Proper parameter validation and type conversion
+    - **Comprehensive Coverage**: Theme parks worldwide with detailed ride information
+
+    ## 🎯 Smart Park Status Logic
+
+    Parks are dynamically classified as "open" or "closed" based on operational rides:
+    - **Threshold-based**: Parks with ≥X% operational rides are "open" (default: 50%)
+    - **Configurable**: Override threshold per request with `?openThreshold=X`
+    - **Real-time**: Status updates based on current ride operational data
+
+    ## 🗺️ Hierarchical URL Structure
+
+    Every park and ride includes a `hierarchicalUrl` for intuitive navigation:
+    - Parks: `/parks/europe/germany/phantasialand`
+    - Rides: `/parks/europe/germany/phantasialand/taron`
+
+    Built with ❤️ for theme park enthusiasts worldwide.
+  version: 1.0.0
+  contact:
+    name: Patrick Arns
+    url: https://arns.dev
+    email: info@arns.dev
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: https://api.park.fan/terms
+
+servers:
+  - url: https://api.park.fan
+    description: Production API
+  - url: http://localhost:3000
+    description: Development server
+
+paths:
+  /:
+    get:
+      summary: API Documentation (HTML)
+      description: Interactive API documentation rendered as HTML
+      tags:
+        - Documentation
+      responses:
+        '200':
+          description: HTML documentation page
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /readme:
+    get:
+      summary: API Documentation (Markdown)
+      description: Raw API documentation in Markdown format
+      tags:
+        - Documentation
+      responses:
+        '200':
+          description: Markdown documentation
+          content:
+            text/markdown:
+              schema:
+                type: string
+
+  /openapi.yaml:
+    get:
+      summary: OpenAPI Specification
+      description: Complete OpenAPI 3.0.3 specification in YAML format
+      tags:
+        - Documentation
+      responses:
+        '200':
+          description: OpenAPI specification
+          content:
+            application/x-yaml:
+              schema:
+                type: string
+
+  /parks:
+    get:
+      summary: Get All Parks
+      description: |
+        Retrieve all theme parks with optional filtering and pagination.
+        Each park includes a `hierarchicalUrl` for location-based navigation.
+      tags:
+        - Parks
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Number of parks per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: isOpen
+          in: query
+          description: Filter parks by operational status
+          required: false
+          schema:
+            type: boolean
+        - name: openThreshold
+          in: query
+          description: Percentage threshold for considering a park "open" (0-100)
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 50
+        - name: continent
+          in: query
+          description: Filter parks by continent
+          required: false
+          schema:
+            type: string
+        - name: country
+          in: query
+          description: Filter parks by country
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of parks with pagination metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Park'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /parks/{parkIdentifier}:
+    get:
+      summary: Get Park by ID or Hierarchical Path
+      description: |
+        Get a specific park by numeric ID or hierarchical path.
+        
+        **Smart Routing:**
+        - Numeric values (e.g., `30`) are treated as park IDs
+        - String values trigger hierarchical path resolution
+        
+        **Hierarchical Examples:**
+        - `/parks/europe` - All parks in Europe
+        - `/parks/europe/germany` - All parks in Germany  
+        - `/parks/europe/germany/phantasialand` - Specific park
+      tags:
+        - Parks
+      parameters:
+        - name: parkIdentifier
+          in: path
+          description: Park ID (numeric) or continent name (string)
+          required: true
+          schema:
+            oneOf:
+              - type: integer
+                description: Numeric park ID
+              - type: string
+                description: Continent name for hierarchical navigation
+        - name: openThreshold
+          in: query
+          description: Percentage threshold for considering a park "open"
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Park details or list of parks for hierarchical paths
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/Park'
+                  - type: array
+                    items:
+                      $ref: '#/components/schemas/Park'
+        '404':
+          description: Park not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /parks/{continent}/{country}:
+    get:
+      summary: Get Parks by Country
+      description: Get all parks in a specific country within a continent
+      tags:
+        - Parks
+      parameters:
+        - name: continent
+          in: path
+          description: Continent name
+          required: true
+          schema:
+            type: string
+        - name: country
+          in: path
+          description: Country name
+          required: true
+          schema:
+            type: string
+        - name: openThreshold
+          in: query
+          description: Percentage threshold for considering a park "open"
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: List of parks in the specified country
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Park'
+
+  /parks/{continent}/{country}/{parkName}:
+    get:
+      summary: Get Park by Hierarchical Path
+      description: Get a specific park using continent/country/park hierarchical path
+      tags:
+        - Parks
+      parameters:
+        - name: continent
+          in: path
+          description: Continent name
+          required: true
+          schema:
+            type: string
+        - name: country
+          in: path
+          description: Country name
+          required: true
+          schema:
+            type: string
+        - name: parkName
+          in: path
+          description: Park name (slug format)
+          required: true
+          schema:
+            type: string
+        - name: openThreshold
+          in: query
+          description: Percentage threshold for considering a park "open"
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Park details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Park'
+        '404':
+          description: Park not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /parks/{continent}/{country}/{parkName}/{rideName}:
+    get:
+      summary: Get Ride by Hierarchical Path
+      description: Get a specific ride using full hierarchical path
+      tags:
+        - Rides
+      parameters:
+        - name: continent
+          in: path
+          description: Continent name
+          required: true
+          schema:
+            type: string
+        - name: country
+          in: path
+          description: Country name
+          required: true
+          schema:
+            type: string
+        - name: parkName
+          in: path
+          description: Park name (slug format)
+          required: true
+          schema:
+            type: string
+        - name: rideName
+          in: path
+          description: Ride name (slug format)
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ride details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ride'
+        '404':
+          description: Ride not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /parks/{id}/rides:
+    get:
+      summary: Get Rides for Park
+      description: Get all rides for a specific park by park ID
+      tags:
+        - Rides
+      parameters:
+        - name: id
+          in: path
+          description: Park ID
+          required: true
+          schema:
+            type: integer
+        - name: isActive
+          in: query
+          description: Filter rides by active status
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List of rides for the park
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Ride'
+
+  /rides:
+    get:
+      summary: Get All Rides
+      description: |
+        Retrieve all rides across all parks with optional filtering.
+        Each ride includes a `hierarchicalUrl` for direct navigation.
+      tags:
+        - Rides
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: limit
+          in: query
+          description: Number of rides per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: isActive
+          in: query
+          description: Filter rides by active status
+          required: false
+          schema:
+            type: boolean
+        - name: parkId
+          in: query
+          description: Filter rides by park ID
+          required: false
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: List of rides with pagination metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Ride'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /rides/{id}:
+    get:
+      summary: Get Ride by ID
+      description: Get a specific ride by its numeric ID
+      tags:
+        - Rides
+      parameters:
+        - name: id
+          in: path
+          description: Ride ID
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Ride details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Ride'
+        '404':
+          description: Ride not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /statistics:
+    get:
+      summary: Get Park Statistics
+      description: |
+        Get comprehensive statistics about parks and rides, including:
+        - Total counts of parks and rides
+        - Operational status breakdowns
+        - Geographic distribution
+        - Busiest and quietest parks based on wait times
+        
+        Parks are classified as "open" or "closed" based on the percentage of operational rides.
+      tags:
+        - Statistics
+      parameters:
+        - name: openThreshold
+          in: query
+          description: |
+            Percentage threshold for considering a park "open" (0-100).
+            Parks with this percentage or more of operational rides are considered "open".
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Comprehensive park and ride statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statistics'
+
+components:
+  schemas:
+    Park:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique park identifier
+          example: 30
+        name:
+          type: string
+          description: Park name
+          example: "Phantasialand"
+        country:
+          type: string
+          description: Country where the park is located
+          example: "Germany"
+        continent:
+          type: string
+          description: Continent where the park is located
+          example: "Europe"
+        latitude:
+          type: number
+          format: float
+          description: Park latitude coordinate
+          example: 50.798761
+        longitude:
+          type: number
+          format: float
+          description: Park longitude coordinate
+          example: 6.879128
+        timezone:
+          type: string
+          description: Park timezone
+          example: "Europe/Berlin"
+        hierarchicalUrl:
+          type: string
+          description: Hierarchical URL path for the park
+          example: "/parks/europe/germany/phantasialand"
+        isOpen:
+          type: boolean
+          description: Whether the park is currently considered "open" based on ride availability
+          example: true
+        rides:
+          type: array
+          description: List of rides in the park (included when fetching specific park)
+          items:
+            $ref: '#/components/schemas/Ride'
+      required:
+        - id
+        - name
+        - country
+        - continent
+        - hierarchicalUrl
+        - isOpen
+
+    Ride:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Unique ride identifier
+          example: 487
+        name:
+          type: string
+          description: Ride name
+          example: "Taron"
+        isActive:
+          type: boolean
+          description: Whether the ride is currently operational
+          example: true
+        waitTime:
+          type: integer
+          nullable: true
+          description: Current wait time in minutes (null if not available)
+          example: 45
+        lastUpdated:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the wait time was last updated
+          example: "2024-01-15T14:30:00Z"
+        parkId:
+          type: integer
+          description: ID of the park this ride belongs to
+          example: 30
+        hierarchicalUrl:
+          type: string
+          description: Hierarchical URL path for the ride
+          example: "/parks/europe/germany/phantasialand/taron"
+        park:
+          $ref: '#/components/schemas/Park'
+          description: Park information (included when fetching rides directly)
+      required:
+        - id
+        - name
+        - isActive
+        - parkId
+        - hierarchicalUrl
+
+    Statistics:
+      type: object
+      properties:
+        totalParks:
+          type: integer
+          description: Total number of parks in the system
+          example: 156
+        totalRides:
+          type: integer
+          description: Total number of rides across all parks
+          example: 2847
+        parksByStatus:
+          type: object
+          properties:
+            open:
+              type: integer
+              description: Number of parks currently considered "open"
+              example: 89
+            closed:
+              type: integer
+              description: Number of parks currently considered "closed"
+              example: 67
+        ridesByStatus:
+          type: object
+          properties:
+            active:
+              type: integer
+              description: Number of rides currently operational
+              example: 2156
+            inactive:
+              type: integer
+              description: Number of rides currently not operational
+              example: 691
+        parksByContinent:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Number of parks per continent
+          example:
+            Europe: 78
+            North America: 45
+            Asia: 23
+        busiestParks:
+          type: array
+          description: Parks with highest average wait times
+          items:
+            type: object
+            properties:
+              parkName:
+                type: string
+                example: "Phantasialand"
+              averageWaitTime:
+                type: number
+                format: float
+                example: 32.5
+              hierarchicalUrl:
+                type: string
+                example: "/parks/europe/germany/phantasialand"
+        quietestParks:
+          type: array
+          description: Parks with lowest average wait times
+          items:
+            type: object
+            properties:
+              parkName:
+                type: string
+                example: "Example Park"
+              averageWaitTime:
+                type: number
+                format: float
+                example: 8.2
+              hierarchicalUrl:
+                type: string
+                example: "/parks/europe/country/example-park"
+        openThreshold:
+          type: integer
+          description: The threshold percentage used for determining park "open" status
+          example: 50
+      required:
+        - totalParks
+        - totalRides
+        - parksByStatus
+        - ridesByStatus
+        - parksByContinent
+        - busiestParks
+        - quietestParks
+        - openThreshold
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          description: Current page number
+          example: 1
+        limit:
+          type: integer
+          description: Number of items per page
+          example: 10
+        total:
+          type: integer
+          description: Total number of items
+          example: 156
+        totalPages:
+          type: integer
+          description: Total number of pages
+          example: 16
+        hasNextPage:
+          type: boolean
+          description: Whether there is a next page
+          example: true
+        hasPreviousPage:
+          type: boolean
+          description: Whether there is a previous page
+          example: false
+      required:
+        - page
+        - limit
+        - total
+        - totalPages
+        - hasNextPage
+        - hasPreviousPage
+
+    Error:
+      type: object
+      properties:
+        statusCode:
+          type: integer
+          description: HTTP status code
+          example: 404
+        message:
+          type: string
+          description: Error message
+          example: "Park not found"
+        error:
+          type: string
+          description: Error type
+          example: "Not Found"
+      required:
+        - statusCode
+        - message
+
+  parameters:
+    OpenThreshold:
+      name: openThreshold
+      in: query
+      description: |
+        Percentage threshold for considering a park "open" (0-100).
+        Parks with this percentage or more of operational rides are considered "open".
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 100
+        default: 50
+
+    Page:
+      name: page
+      in: query
+      description: Page number for pagination
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+
+    Limit:
+      name: limit
+      in: query
+      description: Number of items per page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 10
+
+tags:
+  - name: Documentation
+    description: API documentation and specifications
+  - name: Parks
+    description: Theme park information and hierarchical navigation
+  - name: Rides
+    description: Ride details, wait times, and operational status
+  - name: Statistics
+    description: Comprehensive statistics and analytics
+
+externalDocs:
+  description: Find more info on GitHub
+  url: https://github.com/parns/api.park.fan

@@ -127,6 +127,9 @@ GET /parks?openThreshold=25
 |--------|----------|-------------|
 | `GET` | `/` | 📖 Interactive API documentation (HTML) - Beautifully formatted! |
 | `GET` | `/readme` | 📄 Raw documentation (Markdown) |
+| `GET` | `/openapi.yaml` | 📋 OpenAPI 3.0.3 specification (YAML) |
+
+> 💡 **Pro Tip**: Import the OpenAPI specification into tools like [Postman](https://www.postman.com/), [Insomnia](https://insomnia.rest/), or [Swagger Editor](https://editor.swagger.io/) for interactive API testing!
 
 ### 🏰 Parks - The Theme Parks!
 
@@ -592,6 +595,22 @@ docker build -t park-fan-api .
 # Run container
 docker run -p 3000:3000 park-fan-api
 ```
+
+## 📋 API Documentation
+
+This API provides comprehensive documentation in multiple formats:
+
+- **📖 Interactive HTML**: Visit the root endpoint `/` for beautifully formatted documentation
+- **📄 Raw Markdown**: Access `/readme` for the source documentation  
+- **📋 OpenAPI Specification**: Download the complete OpenAPI 3.0.3 spec from `/openapi.yaml`
+
+### Using the OpenAPI Specification
+
+Import `https://api.park.fan/openapi.yaml` into your favorite API tools:
+- **[Postman](https://www.postman.com/)**: Import → Link → Paste URL
+- **[Insomnia](https://insomnia.rest/)**: Import/Export → From URL
+- **[Swagger Editor](https://editor.swagger.io/)**: File → Import URL
+- **[OpenAPI Generator](https://openapi-generator.tech/)**: Generate client SDKs in 50+ languages
 
 ## 🤝 Acknowledgments
 

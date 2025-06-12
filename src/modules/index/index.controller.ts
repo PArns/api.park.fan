@@ -1,6 +1,8 @@
 import { Controller, Get, Header, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { ReadmeService } from '../utils/readme.service.js';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Controller()
 export class IndexController {
@@ -23,5 +25,26 @@ export class IndexController {
   @Header('Content-Type', 'text/markdown')
   getReadme(): string {
     return this.readmeService.getReadmeAsMarkdown();
+  }
+
+  /**
+   * Get the OpenAPI specification YAML
+   */
+  @Get('openapi.yaml')
+  @Header('Content-Type', 'application/x-yaml')
+  getOpenApiSpec(@Res() res: Response): void {
+    try {
+      const yamlPath = path.join(process.cwd(), 'openapi.yaml');
+      
+      if (!fs.existsSync(yamlPath)) {
+        res.status(404).send('OpenAPI specification not found');
+        return;
+      }
+
+      const yamlContent = fs.readFileSync(yamlPath, 'utf8');
+      res.send(yamlContent);
+    } catch (error) {
+      res.status(500).send('Error reading OpenAPI specification');
+    }
   }
 }
