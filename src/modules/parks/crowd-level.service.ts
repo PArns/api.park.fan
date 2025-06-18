@@ -111,7 +111,7 @@ export class CrowdLevelService {
     this.logger.debug(`Total rides found: ${allRides.length}`);
     
     const ridesWithData = allRides.filter((ride) => {
-      // Check if ride has currentQueueTime (transformed data) or queueTimes array (raw data)
+      // Check if ride has currentQueueTime (transformed data) or queueTimes array (raw data)  
       const currentQueueTime = (ride as any).currentQueueTime || this.parkUtils.getCurrentQueueTime(ride);
       
       this.logger.debug(`Ride ${ride.name}:`, {
@@ -179,7 +179,7 @@ export class CrowdLevelService {
       .andWhere('qt.isOpen = true')
       .andWhere('qt.waitTime > 0')
       .groupBy("DATE_TRUNC('hour', qt.lastUpdated)")
-      .orderBy('avgWaitTime', 'ASC')
+      .orderBy('AVG(qt.waitTime)', 'ASC')
       .getRawMany();
 
     if (historicalData.length < this.MIN_DATA_POINTS) {
