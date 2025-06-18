@@ -191,7 +191,7 @@ export class CrowdLevelService {
   }
 
   /**
-   * Calculate confidence level based on available historical data
+   * Calculate confidence level based on available historical data coverage
    */
   private async calculateConfidence(rideIds: number[]): Promise<number> {
     if (rideIds.length === 0) return 0;
@@ -199,23 +199,43 @@ export class CrowdLevelService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.HISTORICAL_WINDOW_DAYS);
 
-    const dataPointCount = await this.queueTimeRepository
+    // Get the date range of available data
+    const dataRange = await this.queueTimeRepository
       .createQueryBuilder('qt')
+      .select('MIN(qt.lastUpdated)', 'firstDate')
+      .addSelect('MAX(qt.lastUpdated)', 'lastDate')
+      .addSelect('COUNT(*)', 'totalCount')
       .where('qt.rideId IN (:...rideIds)', { rideIds })
       .andWhere('qt.lastUpdated >= :cutoffDate', { cutoffDate })
       .andWhere('qt.isOpen = true')
       .andWhere('qt.waitTime > 0')
-      .getCount();
+      .getRawOne();
 
-    // Calculate confidence based on data points
-    // Full confidence at 1000+ data points, linear scaling below
-    const maxDataPoints = 1000;
-    const confidence = Math.min(
-      100,
-      Math.round((dataPointCount / maxDataPoints) * 100),
-    );
+    if (!dataRange || !dataRange.firstDate || dataRange.totalCount === 0) {
+      return 10; // Minimum confidence when no data
+    }
 
-    return Math.max(10, confidence); // Minimum 10% confidence
+    // Calculate how many days of data we have vs the full historical window
+    const firstDataDate = new Date(dataRange.firstDate);
+    const lastDataDate = new Date(dataRange.lastDate);
+    const today = new Date();
+    
+    // Calculate actual data coverage (days between first and last data point)
+    const actualDataDays = Math.ceil((lastDataDate.getTime() - firstDataDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    // Calculate coverage percentage against the full historical window
+    const coveragePercentage = Math.min(100, (actualDataDays / this.HISTORICAL_WINDOW_DAYS) * 100);
+    
+    // Also consider data density (minimum data points per day)
+    const totalCount = parseInt(dataRange.totalCount);
+    const expectedDataPointsPerDay = 24; // Assuming hourly data
+    const expectedTotalPoints = this.HISTORICAL_WINDOW_DAYS * expectedDataPointsPerDay * rideIds.length;
+    const densityPercentage = Math.min(100, (totalCount / expectedTotalPoints) * 100);
+    
+    // Final confidence is the average of coverage and density, weighted towards coverage
+    const confidence = Math.round((coveragePercentage * 0.7) + (densityPercentage * 0.3));
+
+    return Math.max(10, Math.min(100, confidence)); // Between 10% and 100%
   }
 
   /**
