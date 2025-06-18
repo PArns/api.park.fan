@@ -78,7 +78,6 @@ export class QueueTimesParserService {
     for (const park of parks) {
       try {
         const url = `https://queue-times.com/parks/${park.queueTimesId}/queue_times.json`;
-        this.logger.debug(`Fetching queue times from ${url}`);
 
         const response = await axios.get(url);
         const data = response.data;

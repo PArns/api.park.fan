@@ -1,5 +1,12 @@
-import { IsString, IsNumber, IsOptional, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsString,
+  IsNumber,
+  IsOptional,
+  Min,
+  Max,
+  IsBoolean,
+} from 'class-validator';
+import { Type, Transform } from 'class-transformer';
 
 export class ParkQueryDto {
   @IsOptional()
@@ -38,4 +45,16 @@ export class ParkQueryDto {
   @Min(0)
   @Max(100)
   openThreshold?: number; // Percentage threshold for park to be considered "open" (default: 50)
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'string') {
+      if (value.toLowerCase() === 'true') return true;
+      if (value.toLowerCase() === 'false') return false;
+    }
+    return Boolean(value);
+  })
+  @IsBoolean()
+  includeCrowdLevel?: boolean; // Whether to include crowd level calculation (default: true)
 }

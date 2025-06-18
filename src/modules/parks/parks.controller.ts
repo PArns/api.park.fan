@@ -70,7 +70,12 @@ export class ParksController {
       );
       const threshold = query.openThreshold ?? defaultThreshold;
       const validThreshold = Math.min(Math.max(threshold, 0), 100);
-      const park = await this.parksService.findOne(id, validThreshold);
+      const includeCrowdLevel = query.includeCrowdLevel ?? true;
+      const park = await this.parksService.findOne(
+        id,
+        validThreshold,
+        includeCrowdLevel,
+      );
 
       // Add hierarchical URL to the response
       return {
@@ -208,10 +213,12 @@ export class ParksController {
     );
     const threshold = query.openThreshold ?? defaultThreshold;
     const validThreshold = Math.min(Math.max(threshold, 0), 100);
+    const includeCrowdLevel = query.includeCrowdLevel ?? true;
 
     const parkDetails = await this.parksService.findOne(
       matchingPark.id,
       validThreshold,
+      includeCrowdLevel,
     );
 
     // Add hierarchical URL to the response

@@ -6,6 +6,7 @@ import { ParkGroup } from './park-group.entity.js';
 import { ThemeArea } from './theme-area.entity.js';
 import { Ride } from './ride.entity.js';
 import { ParkQueryDto } from './parks.dto.js';
+import { CrowdLevelService } from './crowd-level.service.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
 import {
   ParkOperatingStatus,
@@ -26,6 +27,7 @@ export class ParksService {
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
     private readonly parkUtils: ParkUtilsService,
+    private readonly crowdLevelService: CrowdLevelService,
   ) {}
 
   /**
@@ -87,18 +89,57 @@ export class ParksService {
   /**
    * Helper function to transform parks with theme areas and rides
    */
-  private transformPark(park: any, openThreshold?: number) {
+  private async transformPark(
+    park: any,
+    openThreshold?: number,
+    includeCrowdLevel: boolean = true,
+  ) {
     const openStatus = this.calculateParkOpenStatus(park, openThreshold);
     const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
 
-    return {
-      ...park,
+    // Create result object by copying specific properties to avoid any unwanted data
+    const result: any = {
+      id: park.id,
+      queueTimesId: park.queueTimesId,
+      name: park.name,
+      country: park.country,
+      continent: park.continent,
+      latitude: park.latitude,
+      longitude: park.longitude,
+      timezone: park.timezone,
+      parkGroup: park.parkGroup,
       themeAreas: park.themeAreas.map((themeArea) =>
         this.transformThemeArea(themeArea),
       ),
       operatingStatus: openStatus,
       waitTimeDistribution, // Add wait time distribution to park data
     };
+
+    // Only calculate and include crowd level if requested
+    if (includeCrowdLevel) {
+      try {
+        result.crowdLevel =
+          await this.crowdLevelService.calculateCrowdLevel(park);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to calculate crowd level for park ${park.id}:`,
+          error,
+        );
+        // Add default crowd level on error
+        result.crowdLevel = {
+          level: 0,
+          label: 'Very Low',
+          ridesUsed: 0,
+          totalRides: 0,
+          historicalBaseline: 0,
+          currentAverage: 0,
+          confidence: 0,
+          calculatedAt: new Date(),
+        };
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -123,7 +164,9 @@ export class ParksService {
       page = 1,
       limit = 10,
       openThreshold,
+      includeCrowdLevel = true,
     } = query;
+
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
     const queryBuilder = this.parkRepository
       .createQueryBuilder('park')
@@ -172,8 +215,10 @@ export class ParksService {
     const parks = await queryBuilder.getMany();
 
     // Transform the data using helper functions
-    const transformedParks = parks.map((park) =>
-      this.transformPark(park, threshold),
+    const transformedParks = await Promise.all(
+      parks.map((park) =>
+        this.transformPark(park, threshold, includeCrowdLevel),
+      ),
     );
 
     return {
@@ -191,7 +236,11 @@ export class ParksService {
   /**
    * Get a single park by ID
    */
-  async findOne(id: number, openThreshold?: number): Promise<any> {
+  async findOne(
+    id: number,
+    openThreshold?: number,
+    includeCrowdLevel: boolean = true,
+  ): Promise<any> {
     const park = await this.parkRepository
       .createQueryBuilder('park')
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')
@@ -209,7 +258,7 @@ export class ParksService {
     }
 
     // Transform the data using helper functions
-    return this.transformPark(park, openThreshold);
+    return await this.transformPark(park, openThreshold, includeCrowdLevel);
   }
 
   /**

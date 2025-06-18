@@ -81,7 +81,6 @@ export class QueueTimesParserService {
     for (const park of parks) {
       try {
         const url = `https://queue-times.com/parks/${park.queueTimesId}/queue_times.json`;
-        this.logger.debug(`Fetching queue times from ${url}`);
 
         const response = await axios.get(url);
         const data = response.data;
@@ -150,9 +149,6 @@ export class QueueTimesParserService {
         // Process rides that are not in theme areas (directly in the rides array)
         const directRides = data.rides || [];
         if (directRides.length > 0) {
-          this.logger.debug(
-            `Processing ${directRides.length} direct rides for park ${park.name}`,
-          );
 
           // Create or get a default theme area for direct rides
           let defaultThemeArea = await this.themeAreaRepository.findOne({
@@ -171,9 +167,6 @@ export class QueueTimesParserService {
                 park: park,
               });
               await this.themeAreaRepository.save(defaultThemeArea);
-              this.logger.debug(
-                `Created default theme area 'General' for park ${park.name}`,
-              );
             } catch (defaultThemeAreaError) {
               // Handle potential unique constraint violations
               if (
@@ -216,10 +209,6 @@ export class QueueTimesParserService {
         totalNewEntries += parkNewEntries;
         totalSkippedEntries += parkSkippedEntries;
         totalProcessedParks++;
-
-        this.logger.debug(
-          `Successfully processed queue times for park: ${park.name} (${parkNewEntries} new, ${parkSkippedEntries} skipped)`,
-        );
       } catch (error) {
         this.logger.warn(
           `Failed to fetch queue times for park ${park.name}: ${error.message}`,

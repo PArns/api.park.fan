@@ -46,3 +46,51 @@ export interface ParkOperatingStatus {
   totalRideCount: number;
   operatingPercentage: number;
 }
+
+export interface CrowdLevel {
+  /**
+   * Current crowd level as percentage (0-200+)
+   * 100 = historical average, >100 = busier than usual
+   */
+  level: number;
+
+  /**
+   * Descriptive label for the crowd level
+   */
+  label: 'Very Low' | 'Low' | 'Moderate' | 'High' | 'Very High' | 'Extreme';
+
+  /**
+   * Number of rides used for calculation (top X% of park)
+   */
+  ridesUsed: number;
+
+  /**
+   * Total number of rides in park
+   */
+  totalRides: number;
+
+  /**
+   * Historical baseline (95th percentile over 2 years)
+   */
+  historicalBaseline: number;
+
+  /**
+   * Current average wait time of top rides
+   */
+  currentAverage: number;
+
+  /**
+   * Confidence level of the calculation (0-100)
+   * Lower if insufficient historical data
+   */
+  confidence: number;
+
+  /**
+   * Last calculation timestamp
+   */
+  calculatedAt: Date;
+}
+
+export interface ParkWithCrowdLevel extends ParkOperatingStatus {
+  crowdLevel: CrowdLevel;
+}

@@ -134,13 +134,19 @@ paths:
           description: Filter parks by continent
           required: false
           schema:
-            type: string
-        - name: country
+            type: string        - name: country
           in: query
           description: Filter parks by country
           required: false
           schema:
             type: string
+        - name: includeCrowdLevel
+          in: query
+          description: Include crowd level calculation in response
+          required: false
+          schema:
+            type: boolean
+            default: true
       responses:
         '200':
           description: List of parks with pagination metadata
@@ -181,8 +187,7 @@ paths:
             oneOf:
               - type: integer
                 description: Numeric park ID
-              - type: string
-                description: Continent name for hierarchical navigation
+              - type: string                description: Continent name for hierarchical navigation
         - name: openThreshold
           in: query
           description: Percentage threshold for considering a park "open"
@@ -192,6 +197,13 @@ paths:
             minimum: 0
             maximum: 100
             default: 50
+        - name: includeCrowdLevel
+          in: query
+          description: Include crowd level calculation in response
+          required: false
+          schema:
+            type: boolean
+            default: true
       responses:
         '200':
           description: Park details or list of parks for hierarchical paths
@@ -525,12 +537,14 @@ components:
         isOpen:
           type: boolean
           description: Whether the park is currently considered "open" based on ride availability
-          example: true
-        rides:
+          example: true        rides:
           type: array
           description: List of rides in the park (included when fetching specific park)
           items:
             $ref: '#/components/schemas/Ride'
+        crowdLevel:
+          $ref: '#/components/schemas/CrowdLevel'
+          description: Current crowd level calculation (included by default, can be excluded with includeCrowdLevel=false)
       required:
         - id
         - name
@@ -703,8 +717,56 @@ components:
         - limit
         - total
         - totalPages
-        - hasNextPage
-        - hasPreviousPage
+        - hasNextPage        - hasPreviousPage
+
+    CrowdLevel:
+      type: object
+      properties:
+        level:
+          type: integer
+          description: Crowd level percentage (0-200+)
+          example: 85
+        label:
+          type: string
+          enum: [Very Low, Low, Moderate, High, Very High, Extreme]
+          description: Descriptive crowd level label
+          example: "Moderate"
+        ridesUsed:
+          type: integer
+          description: Number of rides used in calculation
+          example: 5
+        totalRides:
+          type: integer
+          description: Total number of rides with data
+          example: 12
+        historicalBaseline:
+          type: integer
+          description: Historical baseline wait time in minutes
+          example: 25
+        currentAverage:
+          type: integer
+          description: Current average wait time in minutes
+          example: 21
+        confidence:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Confidence level of calculation (0-100%)
+          example: 78
+        calculatedAt:
+          type: string
+          format: date-time
+          description: When the crowd level was calculated
+          example: "2025-06-18T16:43:17.413Z"
+      required:
+        - level
+        - label
+        - ridesUsed
+        - totalRides
+        - historicalBaseline
+        - currentAverage
+        - confidence
+        - calculatedAt
 
     Error:
       type: object

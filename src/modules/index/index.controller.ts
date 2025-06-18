@@ -35,7 +35,7 @@ export class IndexController {
   getOpenApiSpec(@Res() res: Response): void {
     try {
       const yamlPath = path.join(process.cwd(), 'openapi.yaml');
-      
+
       if (!fs.existsSync(yamlPath)) {
         res.status(404).send('OpenAPI specification not found');
         return;

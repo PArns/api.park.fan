@@ -9,6 +9,7 @@ Built with **NestJS** and **TypeScript** - a high-performance API providing comp
 - **🏰 Theme Parks**: Complete park information with geographic organization
 - **🎠 Rides & Attractions**: Detailed ride data organized by theme areas
 - **⏱️ Live Wait Times**: Real-time queue times with intelligent status detection
+- **🌡️ Crowd Level Intelligence**: AI-driven park congestion analysis with historical context
 - **📊 Advanced Statistics**: Comprehensive analytics with geographical breakdowns
 - **🔍 Smart Search & Filter**: Multi-criteria search across parks, rides, and locations
 - **🌍 Global Coverage**: Parks across multiple continents and countries
@@ -119,6 +120,51 @@ GET /statistics?openThreshold=75
 GET /parks?openThreshold=25
 ```
 
+### 🌡️ Crowd Level Intelligence - NEW! 🔥
+
+The **Crowd Level** feature provides intelligent real-time park congestion analysis:
+
+- **📊 Smart Calculation**: Based on top 30% of rides with highest wait times
+- **📈 Historical Context**: Compares current levels to 2-year rolling average (95th percentile)
+- **🎯 Confidence Scoring**: Data quality assessment for reliable predictions
+- **⚡ Performance Optimized**: Optional calculation for faster API responses
+
+**Crowd Level Scale:**
+- **0-30%**: 🟢 Very Low - Perfect time to visit!
+- **30-60%**: 🟡 Low - Good conditions
+- **60-120%**: 🟠 Moderate - Normal busy levels
+- **120-160%**: 🔴 High - Expect longer waits
+- **160-200%**: 🔴 Very High - Very crowded
+- **200%+**: ⚫ Extreme - Exceptionally busy
+
+**Response Data:**
+```json
+{
+  "crowdLevel": {
+    "level": 85,              // Percentage relative to historical average
+    "label": "Moderate",      // Human-readable description
+    "ridesUsed": 6,          // Number of rides used for calculation
+    "totalRides": 20,        // Total rides in park
+    "historicalBaseline": 45, // Historical average (minutes)
+    "currentAverage": 38,     // Current average wait time (minutes)
+    "confidence": 78,         // Data quality score (0-100%)
+    "calculatedAt": "2025-06-18T10:30:00Z"
+  }
+}
+```
+
+**Configuration:**
+```bash
+# Include crowd level (default)
+GET /parks?includeCrowdLevel=true
+
+# Skip crowd level for faster response
+GET /parks?includeCrowdLevel=false
+
+# Individual park with crowd level
+GET /parks/123?includeCrowdLevel=true
+```
+
 ## 🎯 API Endpoints - Where the Magic Happens!
 
 ### 🏠 Home & Documentation
@@ -204,6 +250,7 @@ GET /parks?openThreshold=25
 | `continent` | `string` | Filter by continent | `?continent=Europe` |
 | `parkGroupId` | `number` | Filter by park group | `?parkGroupId=1` |
 | `openThreshold` | `number` | Operational status threshold (0-100) | `?openThreshold=75` |
+| `includeCrowdLevel` | `boolean` | Include crowd level calculation | `?includeCrowdLevel=false` |
 | `page` | `number` | Page number (≥1) | `?page=2` |
 | `limit` | `number` | Results per page (max 100) | `?limit=20` |
 
@@ -236,6 +283,12 @@ GET https://api.park.fan/parks?country=Germany
 
 # European parks with relaxed "open" criteria
 GET https://api.park.fan/parks?continent=Europe&openThreshold=25
+
+# Parks with crowd level analysis (default)
+GET https://api.park.fan/parks?search=Disney&includeCrowdLevel=true
+
+# Fast response without crowd level calculation
+GET https://api.park.fan/parks?country=Germany&includeCrowdLevel=false
 
 # Parks in a specific group with pagination
 GET https://api.park.fan/parks?parkGroupId=1&page=2&limit=5
