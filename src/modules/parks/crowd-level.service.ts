@@ -219,21 +219,33 @@ export class CrowdLevelService {
     const firstDataDate = new Date(dataRange.firstDate);
     const lastDataDate = new Date(dataRange.lastDate);
     const today = new Date();
-    
+
     // Calculate actual data coverage (days between first and last data point)
-    const actualDataDays = Math.ceil((lastDataDate.getTime() - firstDataDate.getTime()) / (1000 * 60 * 60 * 24));
-    
+    const actualDataDays = Math.ceil(
+      (lastDataDate.getTime() - firstDataDate.getTime()) /
+        (1000 * 60 * 60 * 24),
+    );
+
     // Calculate coverage percentage against the full historical window
-    const coveragePercentage = Math.min(100, (actualDataDays / this.HISTORICAL_WINDOW_DAYS) * 100);
-    
+    const coveragePercentage = Math.min(
+      100,
+      (actualDataDays / this.HISTORICAL_WINDOW_DAYS) * 100,
+    );
+
     // Also consider data density (minimum data points per day)
     const totalCount = parseInt(dataRange.totalCount);
     const expectedDataPointsPerDay = 24; // Assuming hourly data
-    const expectedTotalPoints = this.HISTORICAL_WINDOW_DAYS * expectedDataPointsPerDay * rideIds.length;
-    const densityPercentage = Math.min(100, (totalCount / expectedTotalPoints) * 100);
-    
+    const expectedTotalPoints =
+      this.HISTORICAL_WINDOW_DAYS * expectedDataPointsPerDay * rideIds.length;
+    const densityPercentage = Math.min(
+      100,
+      (totalCount / expectedTotalPoints) * 100,
+    );
+
     // Final confidence is the average of coverage and density, weighted towards coverage
-    const confidence = Math.round((coveragePercentage * 0.7) + (densityPercentage * 0.3));
+    const confidence = Math.round(
+      coveragePercentage * 0.7 + densityPercentage * 0.3,
+    );
 
     return Math.max(10, Math.min(100, confidence)); // Between 10% and 100%
   }
@@ -257,8 +269,6 @@ export class CrowdLevelService {
     totalRides: number,
     reason: string,
   ): CrowdLevel {
-    this.logger.warn(`Using default crowd level: ${reason}`);
-
     return {
       level: 0,
       label: 'Very Low',
