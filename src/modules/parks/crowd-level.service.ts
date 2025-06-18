@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { QueueTime } from './queue-time.entity.js';
-import { Ride } from './ride.entity.js';
 import { CrowdLevel, Park as ParkType } from '../utils/park-utils.types.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
 
