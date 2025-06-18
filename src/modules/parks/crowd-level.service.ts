@@ -17,7 +17,7 @@ export class CrowdLevelService {
   private readonly TOP_RIDES_PERCENTAGE = 0.3; // Use top 30% of rides
   private readonly HISTORICAL_WINDOW_DAYS = 730; // 2 years
   private readonly PERCENTILE = 0.95; // 95th percentile
-  private readonly MIN_DATA_POINTS = 1; // Minimum data points for reliable calculation
+  private readonly MIN_DATA_POINTS = 10; // Minimum data points for reliable calculation
 
   constructor(
     @InjectRepository(QueueTime)
@@ -30,17 +30,23 @@ export class CrowdLevelService {
    */
   async calculateCrowdLevel(park: ParkType): Promise<CrowdLevel> {
     try {
-      this.logger.debug(`Starting crowd level calculation for park: ${park.name}`);
-      
+      this.logger.debug(
+        `Starting crowd level calculation for park: ${park.name}`,
+      );
+
       // Get all rides from the park that have recent queue time data
       const ridesWithCurrentData = this.getRidesWithCurrentData(park);
 
       if (ridesWithCurrentData.length === 0) {
-        this.logger.debug('No rides with current data found, returning default');
+        this.logger.debug(
+          'No rides with current data found, returning default',
+        );
         return this.getDefaultCrowdLevel(0, 0, 'No current data available');
       }
 
-      this.logger.debug(`Found ${ridesWithCurrentData.length} rides with current data`);
+      this.logger.debug(
+        `Found ${ridesWithCurrentData.length} rides with current data`,
+      );
 
       // Determine how many top rides to use (minimum 3, maximum based on percentage)
       const topRidesCount = Math.max(
@@ -55,7 +61,13 @@ export class CrowdLevelService {
         .sort((a, b) => this.getCurrentWaitTime(b) - this.getCurrentWaitTime(a))
         .slice(0, topRidesCount);
 
-      this.logger.debug(`Top rides selected:`, topRides.map(r => ({ name: r.name, waitTime: this.getCurrentWaitTime(r) })));
+      this.logger.debug(
+        `Top rides selected:`,
+        topRides.map((r) => ({
+          name: r.name,
+          waitTime: this.getCurrentWaitTime(r),
+        })),
+      );
 
       // Calculate current average wait time of top rides
       const currentAverage = this.calculateAverageWaitTime(topRides);
@@ -105,25 +117,13 @@ export class CrowdLevelService {
    * Get rides with current queue time data
    */
   private getRidesWithCurrentData(park: ParkType): any[] {
-    this.logger.debug(`Checking rides for park ${park.name} (ID: ${park.id})`);
-    
     const allRides = park.themeAreas.flatMap((themeArea) => themeArea.rides);
-    this.logger.debug(`Total rides found: ${allRides.length}`);
-    
     const ridesWithData = allRides.filter((ride) => {
-      // Check if ride has currentQueueTime (transformed data) or queueTimes array (raw data)  
-      const currentQueueTime = (ride as any).currentQueueTime || this.parkUtils.getCurrentQueueTime(ride);
-      
-      this.logger.debug(`Ride ${ride.name}:`, {
-        hasQueueTime: !!currentQueueTime,
-        isOpen: currentQueueTime?.isOpen,
-        waitTime: currentQueueTime?.waitTime,
-        passes: currentQueueTime &&
-          currentQueueTime.isOpen &&
-          currentQueueTime.waitTime !== null &&
-          currentQueueTime.waitTime > 0
-      });
-      
+      // Check if ride has currentQueueTime (transformed data) or queueTimes array (raw data)
+      const currentQueueTime =
+        (ride as any).currentQueueTime ||
+        this.parkUtils.getCurrentQueueTime(ride);
+
       return (
         currentQueueTime &&
         currentQueueTime.isOpen &&
@@ -131,8 +131,7 @@ export class CrowdLevelService {
         currentQueueTime.waitTime > 0
       );
     });
-    
-    this.logger.debug(`Rides with valid data: ${ridesWithData.length}`);
+
     return ridesWithData;
   }
 
@@ -141,7 +140,8 @@ export class CrowdLevelService {
    */
   private getCurrentWaitTime(ride: any): number {
     // Handle both transformed data (currentQueueTime) and raw data (queueTimes array)
-    const currentQueueTime = ride.currentQueueTime || this.parkUtils.getCurrentQueueTime(ride);
+    const currentQueueTime =
+      ride.currentQueueTime || this.parkUtils.getCurrentQueueTime(ride);
     return currentQueueTime?.waitTime || 0;
   }
 
@@ -183,9 +183,6 @@ export class CrowdLevelService {
       .getRawMany();
 
     if (historicalData.length < this.MIN_DATA_POINTS) {
-      this.logger.warn(
-        `Insufficient historical data: ${historicalData.length} data points`,
-      );
       return 0;
     }
 

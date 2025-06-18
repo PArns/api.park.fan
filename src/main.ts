@@ -52,8 +52,10 @@ async function bootstrap(): Promise<void> {
 
   // Configure logging level
   const logLevel = process.env.LOG_LEVEL || 'log';
-  const logLevels: ('log' | 'error' | 'warn' | 'debug' | 'verbose')[] = 
-    logLevel === 'debug' ? ['log', 'error', 'warn', 'debug', 'verbose'] : ['log', 'error', 'warn'];
+  const logLevels: ('log' | 'error' | 'warn' | 'debug' | 'verbose')[] =
+    logLevel === 'debug'
+      ? ['log', 'error', 'warn', 'debug', 'verbose']
+      : ['log', 'error', 'warn'];
 
   // Now start the app - TypeORM can now connect successfully
   const app = await NestFactory.create(AppModule, {

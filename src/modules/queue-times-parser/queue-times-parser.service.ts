@@ -149,7 +149,6 @@ export class QueueTimesParserService {
         // Process rides that are not in theme areas (directly in the rides array)
         const directRides = data.rides || [];
         if (directRides.length > 0) {
-
           // Create or get a default theme area for direct rides
           let defaultThemeArea = await this.themeAreaRepository.findOne({
             where: {
