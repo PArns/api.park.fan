@@ -32,9 +32,18 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
     const targetDate = date || new Date();
     const dateString = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD format
 
+    // Ensure coordinates are numbers and handle string inputs from database
+    const latNum = typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
+    const lngNum = typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
+
+    // Validate that we have valid numbers
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      throw new Error(`Invalid coordinates: latitude=${latitude}, longitude=${longitude}`);
+    }
+
     return {
-      latitude: Number(latitude.toFixed(6)),
-      longitude: Number(longitude.toFixed(6)),
+      latitude: Number(latNum.toFixed(6)),
+      longitude: Number(lngNum.toFixed(6)),
       date: dateString,
       timezone,
     };
@@ -64,9 +73,18 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
     date: string,
     dataType: WeatherDataType,
   ): string {
+    // Ensure coordinates are numbers and handle string inputs from database
+    const latNum = typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
+    const lngNum = typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
+
+    // Validate that we have valid numbers
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      throw new Error(`Invalid coordinates for weather ID: latitude=${latitude}, longitude=${longitude}`);
+    }
+
     // Round coordinates to 4 decimal places to group nearby locations
-    const latRounded = latitude.toFixed(4);
-    const lngRounded = longitude.toFixed(4);
+    const latRounded = latNum.toFixed(4);
+    const lngRounded = lngNum.toFixed(4);
     return `coord_${latRounded}_${lngRounded}_${date}_${dataType}`;
   }
 

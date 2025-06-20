@@ -152,24 +152,34 @@ export class WeatherService {
     longitude: number,
     timezone: string,
   ): Promise<WeatherData | null> {
+    // Ensure coordinates are numbers and handle string inputs from database
+    const latNum = typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
+    const lngNum = typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
+
+    // Validate that we have valid numbers
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      this.logger.error(`Invalid coordinates provided: latitude=${latitude}, longitude=${longitude}`);
+      return null;
+    }
+
     // Check cache first
     const cacheKey = this.cacheService.generateKey(
-      latitude,
-      longitude,
+      latNum,
+      lngNum,
       timezone,
     );
     const cachedData = await this.cacheService.get(cacheKey);
 
     if (cachedData) {
       this.logger.debug(
-        `Using cached weather data for (${latitude}, ${longitude})`,
+        `Using cached weather data for (${latNum}, ${lngNum})`,
       );
       return cachedData;
     }
 
     // Fetch fresh data if not in cache
     const weatherData = await this.queueRequest(() =>
-      this.fetchWeatherFromAPI(latitude, longitude, timezone),
+      this.fetchWeatherFromAPI(latNum, lngNum, timezone),
     );
 
     // Cache the result if successful
