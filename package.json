@@ -1,7 +1,7 @@
 {
   "name": "api.park.fan",
   "description": "API for the Park.Fan website",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "build": "nest build",
@@ -79,7 +79,7 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@nestjs/core",
-      "@swc/core"
+      "unrs-resolver"
     ]
   }
 }

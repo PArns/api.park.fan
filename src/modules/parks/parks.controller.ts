@@ -5,12 +5,15 @@ import {
   Query,
   ParseIntPipe,
   NotFoundException,
+  Inject,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ParksService } from './parks.service.js';
 import { ParkQueryDto } from './parks.dto.js';
 import { RidesService } from '../rides/rides.service.js';
 import { HierarchicalUrlService } from '../utils/hierarchical-url.service.js';
+import { WEATHER_CACHE_SERVICE } from './weather-cache.interface.js';
+import { WeatherCacheService } from './weather-cache.interface.js';
 
 @Controller('parks')
 export class ParksController {
@@ -18,6 +21,8 @@ export class ParksController {
     private readonly parksService: ParksService,
     private readonly ridesService: RidesService,
     private readonly configService: ConfigService,
+    @Inject(WEATHER_CACHE_SERVICE)
+    private readonly weatherCache: WeatherCacheService,
   ) {}
 
   // Readonly API endpoints for parks
@@ -71,10 +76,12 @@ export class ParksController {
       const threshold = query.openThreshold ?? defaultThreshold;
       const validThreshold = Math.min(Math.max(threshold, 0), 100);
       const includeCrowdLevel = query.includeCrowdLevel ?? true;
+      const includeWeather = query.includeWeather ?? true;
       const park = await this.parksService.findOne(
         id,
         validThreshold,
         includeCrowdLevel,
+        includeWeather,
       );
 
       // Add hierarchical URL to the response
@@ -214,11 +221,13 @@ export class ParksController {
     const threshold = query.openThreshold ?? defaultThreshold;
     const validThreshold = Math.min(Math.max(threshold, 0), 100);
     const includeCrowdLevel = query.includeCrowdLevel ?? true;
+    const includeWeather = query.includeWeather ?? true;
 
     const parkDetails = await this.parksService.findOne(
       matchingPark.id,
       validThreshold,
       includeCrowdLevel,
+      includeWeather,
     );
 
     // Add hierarchical URL to the response

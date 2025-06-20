@@ -57,4 +57,16 @@ export class ParkQueryDto {
   })
   @IsBoolean()
   includeCrowdLevel?: boolean; // Whether to include crowd level calculation (default: true)
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined;
+    if (typeof value === 'string') {
+      if (value.toLowerCase() === 'true') return true;
+      if (value.toLowerCase() === 'false') return false;
+    }
+    return Boolean(value);
+  })
+  @IsBoolean()
+  includeWeather?: boolean; // Whether to include weather data (default: true)
 }

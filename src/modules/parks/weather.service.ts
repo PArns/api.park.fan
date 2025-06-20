@@ -1,0 +1,277 @@
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import axios from 'axios';
+import {
+  WeatherData,
+  WeatherStatus,
+  OpenMeteoResponse,
+} from './weather.dto.js';
+import {
+  WeatherCacheService,
+  WEATHER_CACHE_SERVICE,
+} from './weather-cache.interface.js';
+
+@Injectable()
+export class WeatherService {
+  private readonly logger = new Logger(WeatherService.name);
+  private readonly baseUrl = 'https://api.open-meteo.com/v1/forecast';
+
+  constructor(
+    @Inject(WEATHER_CACHE_SERVICE)
+    private readonly cacheService: WeatherCacheService,
+  ) {}
+
+  /**
+   * Calculate weather score from 0-100% based on multiple factors
+   * 100% = Perfect weather for visiting a theme park
+   * 0% = Terrible weather conditions
+   */
+  private calculateWeatherScore(
+    weatherCode: number,
+    precipitationProbability: number,
+    minTemp: number,
+    maxTemp: number,
+  ): number {
+    let score = 100;
+
+    // Weather condition penalties
+    if (weatherCode === 0) {
+      // Perfect sunny weather
+      score = 100;
+    } else if (weatherCode >= 1 && weatherCode <= 3) {
+      // Partly cloudy to overcast - still good
+      score = Math.max(70, score - (weatherCode - 1) * 10);
+    } else if (weatherCode >= 45 && weatherCode <= 48) {
+      // Fog - significant penalty
+      score = Math.max(30, score - 40);
+    } else if (weatherCode >= 51 && weatherCode <= 57) {
+      // Drizzle - moderate penalty
+      score = Math.max(40, score - 35);
+    } else if (weatherCode >= 61 && weatherCode <= 67) {
+      // Rain - heavy penalty based on intensity
+      const rainPenalty = weatherCode <= 63 ? 45 : weatherCode <= 65 ? 60 : 75;
+      score = Math.max(15, score - rainPenalty);
+    } else if (weatherCode >= 71 && weatherCode <= 86) {
+      // Snow - very heavy penalty
+      score = Math.max(10, score - 70);
+    } else if (weatherCode >= 95 && weatherCode <= 99) {
+      // Thunderstorm - extreme penalty
+      score = Math.max(5, score - 85);
+    }
+
+    // Precipitation probability penalty
+    if (precipitationProbability > 20) {
+      const precipPenalty = Math.min(
+        30,
+        (precipitationProbability - 20) * 0.375,
+      );
+      score = Math.max(0, score - precipPenalty);
+    }
+
+    // Temperature comfort scoring
+    const optimalTempRange = { min: 18, max: 25 }; // Optimal range for theme park visits
+    const comfortableTempRange = { min: 12, max: 30 }; // Comfortable range
+
+    if (
+      maxTemp < comfortableTempRange.min ||
+      minTemp > comfortableTempRange.max
+    ) {
+      // Extreme temperatures - heavy penalty
+      score = Math.max(0, score - 40);
+    } else if (
+      maxTemp < optimalTempRange.min ||
+      minTemp > optimalTempRange.max
+    ) {
+      // Sub-optimal but acceptable temperatures - moderate penalty
+      const tempPenalty = Math.min(
+        25,
+        Math.max(
+          Math.abs(maxTemp - optimalTempRange.max),
+          Math.abs(minTemp - optimalTempRange.min),
+        ) * 2,
+      );
+      score = Math.max(0, score - tempPenalty);
+    }
+
+    // Extreme temperature spread penalty
+    const tempSpread = maxTemp - minTemp;
+    if (tempSpread > 15) {
+      const spreadPenalty = Math.min(15, (tempSpread - 15) * 1.5);
+      score = Math.max(0, score - spreadPenalty);
+    }
+
+    return Math.round(Math.max(0, Math.min(100, score)));
+  }
+
+  /**
+   * Map weather codes from Open-Meteo to readable status
+   * Based on WMO weather interpretation codes
+   */
+  private mapWeatherCodeToStatus(code: number): WeatherStatus {
+    // Clear sky
+    if (code === 0) return WeatherStatus.SUNNY;
+
+    // Mainly clear, partly cloudy, and overcast
+    if (code >= 1 && code <= 3) {
+      if (code === 1) return WeatherStatus.PARTLY_CLOUDY;
+      if (code === 2) return WeatherStatus.CLOUDY;
+      if (code === 3) return WeatherStatus.OVERCAST;
+    }
+
+    // Fog
+    if (code >= 45 && code <= 48) return WeatherStatus.FOG;
+
+    // Drizzle
+    if (code >= 51 && code <= 57) return WeatherStatus.DRIZZLE;
+
+    // Rain
+    if (code >= 61 && code <= 67) {
+      if (code <= 63) return WeatherStatus.LIGHT_RAIN;
+      if (code <= 65) return WeatherStatus.RAIN;
+      return WeatherStatus.HEAVY_RAIN;
+    }
+
+    // Snow
+    if (code >= 71 && code <= 86) return WeatherStatus.SNOW;
+
+    // Thunderstorm
+    if (code >= 95 && code <= 99) return WeatherStatus.THUNDERSTORM;
+
+    // Default fallback
+    return WeatherStatus.CLOUDY;
+  }
+
+  /**
+   * Get weather data for a specific location with caching
+   */
+  async getWeatherForLocation(
+    latitude: number,
+    longitude: number,
+    timezone: string,
+  ): Promise<WeatherData | null> {
+    // Check cache first
+    const cacheKey = this.cacheService.generateKey(
+      latitude,
+      longitude,
+      timezone,
+    );
+    const cachedData = await this.cacheService.get(cacheKey);
+
+    if (cachedData) {
+      this.logger.debug(
+        `Using cached weather data for (${latitude}, ${longitude})`,
+      );
+      return cachedData;
+    }
+
+    // Fetch fresh data if not in cache
+    const weatherData = await this.fetchWeatherFromAPI(
+      latitude,
+      longitude,
+      timezone,
+    );
+
+    // Cache the result if successful
+    if (weatherData) {
+      await this.cacheService.set(cacheKey, weatherData, 6); // Cache for 6 hours
+    }
+
+    return weatherData;
+  }
+
+  /**
+   * Fetch weather data from Open-Meteo API
+   */
+  private async fetchWeatherFromAPI(
+    latitude: number,
+    longitude: number,
+    timezone: string,
+  ): Promise<WeatherData | null> {
+    try {
+      const params = {
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+        timezone,
+        daily: [
+          'temperature_2m_max',
+          'temperature_2m_min',
+          'precipitation_probability_max',
+          'weather_code',
+        ].join(','),
+        hourly: [
+          'temperature_2m',
+          'weather_code',
+          'precipitation_probability',
+        ].join(','),
+        forecast_days: 1,
+      };
+
+      const response = await axios.get<OpenMeteoResponse>(this.baseUrl, {
+        params,
+      });
+      const data = response.data;
+
+      if (!data.daily || data.daily.time.length === 0) {
+        this.logger.warn('No weather data received from Open-Meteo API');
+        return null;
+      }
+
+      // Get today's daily data (first entry)
+      const todayIndex = 0;
+      const dailyData = data.daily;
+
+      // Get daytime weather data (9-22h) for more accurate status
+      const daytimeHours =
+        data.hourly?.time
+          .map((time, index) => {
+            const hour = new Date(time).getHours();
+            return hour >= 9 && hour <= 22 ? index : -1;
+          })
+          .filter((index) => index !== -1) || [];
+
+      // Calculate average weather code during daytime hours
+      let avgWeatherCode = dailyData.weather_code[todayIndex];
+      if (daytimeHours.length > 0 && data.hourly?.weather_code) {
+        const daytimeCodes = daytimeHours.map(
+          (index) => data.hourly.weather_code[index],
+        );
+        avgWeatherCode = Math.round(
+          daytimeCodes.reduce((sum, code) => sum + code, 0) /
+            daytimeCodes.length,
+        );
+      }
+
+      const minTemp = Math.round(dailyData.temperature_2m_min[todayIndex]);
+      const maxTemp = Math.round(dailyData.temperature_2m_max[todayIndex]);
+      const precipitationProbability =
+        dailyData.precipitation_probability_max[todayIndex];
+
+      const weatherData: WeatherData = {
+        temperature: {
+          min: minTemp,
+          max: maxTemp,
+        },
+        precipitationProbability,
+        weatherCode: avgWeatherCode,
+        status: this.mapWeatherCodeToStatus(avgWeatherCode),
+        weatherScore: this.calculateWeatherScore(
+          avgWeatherCode,
+          precipitationProbability,
+          minTemp,
+          maxTemp,
+        ),
+      };
+
+      this.logger.debug(
+        `Weather data retrieved for coordinates (${latitude}, ${longitude}): ${JSON.stringify(weatherData)}`,
+      );
+
+      return weatherData;
+    } catch (error) {
+      this.logger.error(
+        `Failed to fetch weather data for coordinates (${latitude}, ${longitude}):`,
+        error,
+      );
+      return null;
+    }
+  }
+}

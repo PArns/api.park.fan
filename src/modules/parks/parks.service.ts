@@ -2,11 +2,9 @@ import { Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Park } from './park.entity.js';
-import { ParkGroup } from './park-group.entity.js';
-import { ThemeArea } from './theme-area.entity.js';
-import { Ride } from './ride.entity.js';
 import { ParkQueryDto } from './parks.dto.js';
 import { CrowdLevelService } from './crowd-level.service.js';
+import { WeatherService } from './weather.service.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
 import {
   ParkOperatingStatus,
@@ -20,14 +18,9 @@ export class ParksService {
   constructor(
     @InjectRepository(Park)
     private readonly parkRepository: Repository<Park>,
-    @InjectRepository(ParkGroup)
-    private readonly parkGroupRepository: Repository<ParkGroup>,
-    @InjectRepository(ThemeArea)
-    private readonly themeAreaRepository: Repository<ThemeArea>,
-    @InjectRepository(Ride)
-    private readonly rideRepository: Repository<Ride>,
     private readonly parkUtils: ParkUtilsService,
     private readonly crowdLevelService: CrowdLevelService,
+    private readonly weatherService: WeatherService,
   ) {}
 
   /**
@@ -93,9 +86,20 @@ export class ParksService {
     park: any,
     openThreshold?: number,
     includeCrowdLevel: boolean = true,
+    includeWeather: boolean = true,
   ) {
     const openStatus = this.calculateParkOpenStatus(park, openThreshold);
     const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
+
+    // Get weather data for the park if requested
+    let weather = null;
+    if (includeWeather) {
+      weather = await this.weatherService.getWeatherForLocation(
+        park.latitude,
+        park.longitude,
+        park.timezone,
+      );
+    }
 
     // Create result object by copying specific properties to avoid any unwanted data
     const result: any = {
@@ -114,6 +118,11 @@ export class ParksService {
       operatingStatus: openStatus,
       waitTimeDistribution, // Add wait time distribution to park data
     };
+
+    // Add weather data only if requested and available
+    if (includeWeather && weather) {
+      result.weather = weather;
+    }
 
     // Only calculate and include crowd level if requested
     if (includeCrowdLevel) {
@@ -165,6 +174,7 @@ export class ParksService {
       limit = 10,
       openThreshold,
       includeCrowdLevel = true,
+      includeWeather = true,
     } = query;
 
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
@@ -217,7 +227,7 @@ export class ParksService {
     // Transform the data using helper functions
     const transformedParks = await Promise.all(
       parks.map((park) =>
-        this.transformPark(park, threshold, includeCrowdLevel),
+        this.transformPark(park, threshold, includeCrowdLevel, includeWeather),
       ),
     );
 
@@ -240,6 +250,7 @@ export class ParksService {
     id: number,
     openThreshold?: number,
     includeCrowdLevel: boolean = true,
+    includeWeather: boolean = true,
   ): Promise<any> {
     const park = await this.parkRepository
       .createQueryBuilder('park')
@@ -258,7 +269,12 @@ export class ParksService {
     }
 
     // Transform the data using helper functions
-    return await this.transformPark(park, openThreshold, includeCrowdLevel);
+    return await this.transformPark(
+      park,
+      openThreshold,
+      includeCrowdLevel,
+      includeWeather,
+    );
   }
 
   /**

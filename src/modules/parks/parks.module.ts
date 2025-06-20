@@ -8,6 +8,9 @@ import { QueueTime } from './queue-time.entity';
 import { ParksController } from './parks.controller.js';
 import { ParksService } from './parks.service';
 import { CrowdLevelService } from './crowd-level.service.js';
+import { WeatherService } from './weather.service.js';
+import { MemoryWeatherCacheService } from './memory-weather-cache.service.js';
+import { WEATHER_CACHE_SERVICE } from './weather-cache.interface.js';
 import { QueueTimesParserService } from '../queue-times-parser/queue-times-parser.service';
 import { RidesService } from '../rides/rides.service';
 import { UtilsModule } from '../utils/utils.module';
@@ -23,6 +26,11 @@ import { UtilsModule } from '../utils/utils.module';
     RidesService,
     QueueTimesParserService,
     CrowdLevelService,
+    WeatherService,
+    {
+      provide: WEATHER_CACHE_SERVICE,
+      useClass: MemoryWeatherCacheService,
+    },
   ],
   exports: [TypeOrmModule, ParksService, CrowdLevelService],
 })

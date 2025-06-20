@@ -147,6 +147,13 @@ paths:
           schema:
             type: boolean
             default: true
+        - name: includeWeather
+          in: query
+          description: Include live weather data in response
+          required: false
+          schema:
+            type: boolean
+            default: true
       responses:
         '200':
           description: List of parks with pagination metadata
@@ -200,6 +207,13 @@ paths:
         - name: includeCrowdLevel
           in: query
           description: Include crowd level calculation in response
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: includeWeather
+          in: query
+          description: Include live weather data in response
           required: false
           schema:
             type: boolean
@@ -545,6 +559,9 @@ components:
         crowdLevel:
           $ref: '#/components/schemas/CrowdLevel'
           description: Current crowd level calculation (included by default, can be excluded with includeCrowdLevel=false)
+        weather:
+          $ref: '#/components/schemas/Weather'
+          description: Current weather conditions for the park location (included by default, can be excluded with includeWeather=false)
       required:
         - id
         - name
@@ -767,6 +784,73 @@ components:
         - currentAverage
         - confidence
         - calculatedAt
+
+    Weather:
+      type: object
+      description: Current weather conditions for the park location
+      properties:
+        temperature:
+          type: object
+          description: Temperature range for the day
+          properties:
+            min:
+              type: integer
+              description: Minimum temperature in Celsius
+              example: 18
+            max:
+              type: integer
+              description: Maximum temperature in Celsius
+              example: 25
+          required:
+            - min
+            - max
+        precipitationProbability:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Probability of precipitation (0-100%)
+          example: 20
+        weatherCode:
+          type: integer
+          description: WMO weather interpretation code
+          example: 1
+        status:
+          type: string
+          enum:
+            - sunny
+            - partly_cloudy
+            - cloudy
+            - overcast
+            - light_rain
+            - rain
+            - heavy_rain
+            - thunderstorm
+            - snow
+            - fog
+            - drizzle
+          description: Human-readable weather status
+          example: "partly_cloudy"
+        weatherScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: |
+            AI-powered weather quality score for theme park visits (0-100%).
+            100% = Perfect weather conditions, 0% = Terrible weather.
+            
+            Score ranges:
+            - 90-100%: Perfect conditions - ideal for visiting
+            - 70-89%: Good conditions - great for outdoor activities  
+            - 50-69%: Fair conditions - acceptable but not optimal
+            - 30-49%: Poor conditions - consider indoor attractions
+            - 0-29%: Terrible conditions - might want to postpone visit
+          example: 85
+      required:
+        - temperature
+        - precipitationProbability
+        - weatherCode
+        - status
+        - weatherScore
 
     Error:
       type: object

@@ -9,7 +9,8 @@ Built with **NestJS** and **TypeScript** - a high-performance API providing comp
 - **🏰 Theme Parks**: Complete park information with geographic organization
 - **🎠 Rides & Attractions**: Detailed ride data organized by theme areas
 - **⏱️ Live Wait Times**: Real-time queue times with intelligent status detection
-- **🌡️ Crowd Level Intelligence**: AI-driven park congestion analysis with historical context
+- **�️ Live Weather Data**: Real-time weather information for each park location
+- **�🌡️ Crowd Level Intelligence**: AI-driven park congestion analysis with historical context
 - **📊 Advanced Statistics**: Comprehensive analytics with geographical breakdowns
 - **🔍 Smart Search & Filter**: Multi-criteria search across parks, rides, and locations
 - **🌍 Global Coverage**: Parks across multiple continents and countries
@@ -165,6 +166,80 @@ GET /parks?includeCrowdLevel=false
 GET /parks/123?includeCrowdLevel=true
 ```
 
+### 🌤️ Live Weather Data ☀️
+
+The **Live Weather** feature provides real-time weather information for every park location:
+
+- **🌡️ Temperature Range**: Daily min/max temperatures during park operating hours (9-22h)
+- **🌧️ Precipitation Probability**: Chance of rain throughout the day
+- **☀️ Weather Status**: Human-readable weather conditions
+- **� Weather Score**: AI-powered weather quality rating (0-100%) for theme park visits
+- **�🌍 Timezone-Aware**: Weather data adjusted to park's local timezone
+- **⚡ Performance-Optimized**: Optional inclusion for faster API responses when not needed
+
+**Weather Status Types:**
+- **☀️ sunny**: Clear, sunny skies
+- **⛅ partly_cloudy**: Some clouds, mostly sunny
+- **☁️ cloudy**: Overcast but no precipitation
+- **🌫️ overcast**: Completely overcast
+- **🌦️ light_rain**: Light rain or drizzle
+- **🌧️ rain**: Moderate rainfall
+- **⛈️ heavy_rain**: Heavy rainfall
+- **⚡ thunderstorm**: Thunderstorms with lightning
+- **❄️ snow**: Snow or freezing conditions
+- **🌫️ fog**: Fog or mist
+- **🌦️ drizzle**: Light drizzle
+
+**🎯 Weather Score Algorithm:**
+The weather score (0-100%) evaluates conditions for theme park visits:
+- **90-100%**: 🟢 Perfect conditions - ideal for visiting!
+- **70-89%**: 🟡 Good conditions - great for outdoor activities
+- **50-69%**: 🟠 Fair conditions - acceptable but not optimal
+- **30-49%**: 🔴 Poor conditions - consider indoor attractions
+- **0-29%**: ⚫ Terrible conditions - might want to postpone visit
+
+**Factors considered:**
+- Weather conditions (sunny weather = higher score)
+- Precipitation probability (lower chance = higher score)
+- Temperature comfort (18-25°C optimal range)
+- Temperature stability (consistent temps preferred)
+
+**Response Data:**
+```json
+{
+  "weather": {
+    "temperature": {
+      "min": 18,              // Minimum temperature (°C)
+      "max": 25               // Maximum temperature (°C)
+    },
+    "precipitationProbability": 20,  // Chance of rain (0-100%)
+    "weatherCode": 1,                // WMO weather code
+    "status": "partly_cloudy",       // Human-readable status
+    "weatherScore": 85               // Weather quality score (0-100%)
+  }
+}
+```
+
+**Configuration:**
+```bash
+# Include weather data (default)
+GET /parks?includeWeather=true
+
+# Skip weather data for faster response
+GET /parks?includeWeather=false
+
+# Individual park with weather
+GET /parks/123?includeWeather=true
+```
+
+**Data Source:**
+Weather data is sourced from the free **[Open-Meteo API](https://open-meteo.com)**, providing:
+- 🌍 Global coverage for all park locations
+- 🎯 High accuracy meteorological data
+- ⚡ No API key required
+- 🔄 Real-time updates
+- 🌐 WMO (World Meteorological Organization) standard weather codes
+
 ## 🎯 API Endpoints - Where the Magic Happens!
 
 ### 🏠 Home & Documentation
@@ -251,6 +326,7 @@ GET /parks/123?includeCrowdLevel=true
 | `parkGroupId` | `number` | Filter by park group | `?parkGroupId=1` |
 | `openThreshold` | `number` | Operational status threshold (0-100) | `?openThreshold=75` |
 | `includeCrowdLevel` | `boolean` | Include crowd level calculation | `?includeCrowdLevel=false` |
+| `includeWeather` | `boolean` | Include live weather data | `?includeWeather=false` |
 | `page` | `number` | Page number (≥1) | `?page=2` |
 | `limit` | `number` | Results per page (max 100) | `?limit=20` |
 
@@ -289,6 +365,15 @@ GET https://api.park.fan/parks?search=Disney&includeCrowdLevel=true
 
 # Fast response without crowd level calculation
 GET https://api.park.fan/parks?country=Germany&includeCrowdLevel=false
+
+# Fast response without weather data
+GET https://api.park.fan/parks?country=Germany&includeWeather=false
+
+# Complete data with both crowd level and weather (default)
+GET https://api.park.fan/parks?search=Disney
+
+# Minimal response - no crowd level or weather for maximum speed
+GET https://api.park.fan/parks?includeCrowdLevel=false&includeWeather=false
 
 # Parks in a specific group with pagination
 GET https://api.park.fan/parks?parkGroupId=1&page=2&limit=5
@@ -354,7 +439,7 @@ GET https://api.park.fan/continents
 
 ## 📋 Response Examples
 
-### 🏰 Park Details with Operating Status
+### 🏰 Park Details with Operating Status & Weather
 
 ```bash
 GET https://api.park.fan/parks/25
@@ -376,6 +461,26 @@ GET https://api.park.fan/parks/25
     "totalRideCount": 58,
     "operatingPercentage": 72.4,
     "openThreshold": 50
+  },
+  "weather": {
+    "temperature": {
+      "min": 22,
+      "max": 28
+    },
+    "precipitationProbability": 10,
+    "weatherCode": 1,
+    "status": "partly_cloudy",
+    "weatherScore": 92
+  },
+  "crowdLevel": {
+    "level": 85,
+    "label": "Moderate",
+    "ridesUsed": 15,
+    "totalRides": 42,
+    "historicalBaseline": 35,
+    "currentAverage": 42,
+    "confidence": 82,
+    "calculatedAt": "2025-06-20T15:30:00Z"
   },
   "themeAreas": [
     {
@@ -405,6 +510,16 @@ GET https://api.park.fan/parks/europe/germany/phantasialand
     "openRideCount": 0,
     "totalRideCount": 33,
     "operatingPercentage": 0
+  },
+  "weather": {
+    "temperature": {
+      "min": 12,
+      "max": 18
+    },
+    "precipitationProbability": 65,
+    "weatherCode": 61,
+    "status": "light_rain",
+    "weatherScore": 25
   },
   "themeAreas": [...]
 }
@@ -578,12 +693,56 @@ src/
 
 ### 🔄 Data Flow
 
-1. **📡 External API Integration**: Connects to queue-times.com API
+1. **📡 External API Integration**: Connects to queue-times.com API and Open-Meteo weather API
 2. **🔄 Automated Synchronization**: Scheduled updates of park and ride data
-3. **🗄️ Database Storage**: PostgreSQL with optimized schema
-4. **📊 Real-time Analytics**: Live statistics and operating status
-5. **🎯 RESTful API**: Clean endpoints with intelligent caching
-6. **📱 Response Formatting**: Consistent JSON responses with rich metadata
+3. **🌤️ Real-time Weather**: Live weather data fetched based on park coordinates and timezone
+4. **🗄️ Database Storage**: PostgreSQL with optimized schema
+5. **📊 Real-time Analytics**: Live statistics and operating status
+6. **🎯 RESTful API**: Clean endpoints with intelligent caching
+7. **📱 Response Formatting**: Consistent JSON responses with rich metadata
+
+## 🌤️ Weather Data Examples
+
+### Weather-Optimized Park Selection
+
+```bash
+# Find parks with good weather (example usage for a weather app)
+GET https://api.park.fan/parks?continent=Europe&includeWeather=true&limit=50
+
+# Get all parks with minimal data for weather overview
+GET https://api.park.fan/parks?includeCrowdLevel=false&includeWeather=true
+```
+
+### Weather-Aware Trip Planning
+
+```bash
+# Check weather at a specific park before visiting
+GET https://api.park.fan/parks/europe/germany/phantasialand?includeWeather=true
+
+# Compare weather across multiple Disney parks
+GET https://api.park.fan/parks?search=Disney&includeWeather=true
+
+# Weather data for all US parks
+GET https://api.park.fan/parks/north-america/united-states?includeWeather=true
+```
+
+**Weather Response Example:**
+```json
+{
+  "weather": {
+    "temperature": {
+      "min": 16,
+      "max": 23
+    },
+    "precipitationProbability": 15,
+    "weatherCode": 2,
+    "status": "partly_cloudy",
+    "weatherScore": 78
+  }
+}
+```
+
+Weather conditions evaluation: 🟡 **Good conditions (78/100)** - Great weather for theme park visits! Partly cloudy with comfortable temperatures and low chance of rain.
 
 ## 🚀 Performance Optimizations
 
