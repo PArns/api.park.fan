@@ -621,86 +621,291 @@ components:
           type: integer
           description: Total number of parks in the system
           example: 156
+        totalThemeAreas:
+          type: integer
+          description: Total number of theme areas across all parks
+          example: 486
         totalRides:
           type: integer
           description: Total number of rides across all parks
           example: 2847
-        parksByStatus:
+        parkOperatingStatus:
           type: object
           properties:
-            open:
+            openParks:
               type: integer
               description: Number of parks currently considered "open"
               example: 89
-            closed:
+            closedParks:
               type: integer
               description: Number of parks currently considered "closed"
               example: 67
-        ridesByStatus:
+            operatingPercentage:
+              type: number
+              description: Percentage of parks currently open
+              example: 57.0
+            openThreshold:
+              type: integer
+              description: The threshold percentage used for determining park "open" status
+              example: 50
+        rideStatistics:
           type: object
           properties:
-            active:
+            totalRides:
               type: integer
-              description: Number of rides currently operational
+              description: Total number of rides
+              example: 2847
+            activeRides:
+              type: integer
+              description: Number of rides currently active
               example: 2156
-            inactive:
+            openRides:
               type: integer
-              description: Number of rides currently not operational
-              example: 691
+              description: Number of rides currently open
+              example: 1692
+            closedRides:
+              type: integer
+              description: Number of rides currently closed
+              example: 464
+            operatingPercentage:
+              type: number
+              description: Percentage of rides currently operating
+              example: 78.5
+            waitTimeDistribution:
+              type: object
+              description: Distribution of wait times across different ranges
+              properties:
+                "0-10":
+                  type: integer
+                  example: 1425
+                "11-30":
+                  type: integer
+                  example: 187
+                "31-60":
+                  type: integer
+                  example: 58
+                "61-120":
+                  type: integer
+                  example: 19
+                "120+":
+                  type: integer
+                  example: 3
+            longestWaitTimes:
+              type: array
+              description: Rides with the longest current wait times
+              items:
+                type: object
+                properties:
+                  rideId:
+                    type: integer
+                    example: 487
+                  name:
+                    type: string
+                    example: "Guardians of the Galaxy"
+                  waitTime:
+                    type: integer
+                    example: 135
+                  isOpen:
+                    type: boolean
+                    example: true
+                  lastUpdated:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T14:30:00Z"
+                  hierarchicalUrl:
+                    type: string
+                    description: Hierarchical URL path for the ride
+                    example: "/parks/north-america/united-states/disney-california-adventure/guardians-of-the-galaxy"
+                  park:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 124
+                      name:
+                        type: string
+                        example: "Disney California Adventure"
+                      country:
+                        type: string
+                        example: "United States"
+                      continent:
+                        type: string
+                        example: "North America"
+                      hierarchicalUrl:
+                        type: string
+                        description: Hierarchical URL path for the park
+                        example: "/parks/north-america/united-states/disney-california-adventure"
+            shortestWaitTimes:
+              type: array
+              description: Rides with the shortest current wait times
+              items:
+                type: object
+                properties:
+                  rideId:
+                    type: integer
+                    example: 123
+                  name:
+                    type: string
+                    example: "Carousel"
+                  waitTime:
+                    type: integer
+                    example: 5
+                  isOpen:
+                    type: boolean
+                    example: true
+                  lastUpdated:
+                    type: string
+                    format: date-time
+                    example: "2024-01-15T14:30:00Z"
+                  hierarchicalUrl:
+                    type: string
+                    description: Hierarchical URL path for the ride
+                    example: "/parks/europe/germany/phantasialand/carousel"
+                  park:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                        example: 30
+                      name:
+                        type: string
+                        example: "Phantasialand"
+                      country:
+                        type: string
+                        example: "Germany"
+                      continent:
+                        type: string
+                        example: "Europe"
+                      hierarchicalUrl:
+                        type: string
+                        description: Hierarchical URL path for the park
+                        example: "/parks/europe/germany/phantasialand"
+            busiestParks:
+              type: array
+              description: Parks with highest average wait times
+              items:
+                type: object
+                properties:
+                  parkId:
+                    type: integer
+                    example: 30
+                  parkName:
+                    type: string
+                    example: "Phantasialand"
+                  country:
+                    type: string
+                    example: "Germany"
+                  continent:
+                    type: string
+                    example: "Europe"
+                  averageWaitTime:
+                    type: number
+                    description: Average wait time across all rides
+                    example: 32.5
+                  openRideCount:
+                    type: integer
+                    description: Number of currently open rides
+                    example: 15
+                  totalRideCount:
+                    type: integer
+                    description: Total number of rides in the park
+                    example: 18
+                  operatingPercentage:
+                    type: number
+                    description: Percentage of rides currently operating
+                    example: 83.3
+                  hierarchicalUrl:
+                    type: string
+                    description: Hierarchical URL path for the park
+                    example: "/parks/europe/germany/phantasialand"
+            quietestParks:
+              type: array
+              description: Parks with lowest average wait times
+              items:
+                type: object
+                properties:
+                  parkId:
+                    type: integer
+                    example: 45
+                  parkName:
+                    type: string
+                    example: "Example Park"
+                  country:
+                    type: string
+                    example: "Country"
+                  continent:
+                    type: string
+                    example: "Europe"
+                  averageWaitTime:
+                    type: number
+                    description: Average wait time across all rides
+                    example: 8.2
+                  openRideCount:
+                    type: integer
+                    description: Number of currently open rides
+                    example: 12
+                  totalRideCount:
+                    type: integer
+                    description: Total number of rides in the park
+                    example: 14
+                  operatingPercentage:
+                    type: number
+                    description: Percentage of rides currently operating
+                    example: 85.7
+                  hierarchicalUrl:
+                    type: string
+                    description: Hierarchical URL path for the park
+                    example: "/parks/europe/country/example-park"
         parksByContinent:
-          type: object
-          additionalProperties:
-            type: integer
-          description: Number of parks per continent
-          example:
-            Europe: 78
-            North America: 45
-            Asia: 23
-        busiestParks:
           type: array
-          description: Parks with highest average wait times
+          description: Park statistics grouped by continent
           items:
             type: object
             properties:
-              parkName:
+              continent:
                 type: string
-                example: "Phantasialand"
-              averageWaitTime:
+                example: "Europe"
+              totalParks:
+                type: integer
+                example: 78
+              openParks:
+                type: integer
+                example: 45
+              closedParks:
+                type: integer
+                example: 33
+              operatingPercentage:
                 type: number
-                format: float
-                example: 32.5
-              hierarchicalUrl:
-                type: string
-                example: "/parks/europe/germany/phantasialand"
-        quietestParks:
+                example: 57.7
+        parksByCountry:
           type: array
-          description: Parks with lowest average wait times
+          description: Park statistics grouped by country (top 10)
           items:
             type: object
             properties:
-              parkName:
+              country:
                 type: string
-                example: "Example Park"
-              averageWaitTime:
+                example: "United States"
+              totalParks:
+                type: integer
+                example: 45
+              openParks:
+                type: integer
+                example: 28
+              closedParks:
+                type: integer
+                example: 17
+              operatingPercentage:
                 type: number
-                format: float
-                example: 8.2
-              hierarchicalUrl:
-                type: string
-                example: "/parks/europe/country/example-park"
-        openThreshold:
-          type: integer
-          description: The threshold percentage used for determining park "open" status
-          example: 50
+                example: 62.2
       required:
         - totalParks
+        - totalThemeAreas
         - totalRides
-        - parksByStatus
-        - ridesByStatus
+        - parkOperatingStatus
+        - rideStatistics
         - parksByContinent
-        - busiestParks
-        - quietestParks
-        - openThreshold
+        - parksByCountry
 
     Pagination:
       type: object

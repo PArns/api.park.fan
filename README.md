@@ -9,17 +9,18 @@ Built with **NestJS** and **TypeScript** - a high-performance API providing comp
 - **🏰 Theme Parks**: Complete park information with geographic organization
 - **🎠 Rides & Attractions**: Detailed ride data organized by theme areas
 - **⏱️ Live Wait Times**: Real-time queue times with intelligent status detection
-- **�️ Live Weather Data**: Real-time weather information for each park location
-- **�🌡️ Crowd Level Intelligence**: AI-driven park congestion analysis with historical context
-- **📊 Advanced Statistics**: Comprehensive analytics with geographical breakdowns
+- **🌤️ Live Weather Data**: Real-time weather information for each park location
+- **🌡️ Crowd Level Intelligence**: AI-driven park congestion analysis with historical context
+- **📊 Advanced Statistics**: Comprehensive analytics with geographical breakdowns and hierarchical URLs
 - **🔍 Smart Search & Filter**: Multi-criteria search across parks, rides, and locations
 - **🌍 Global Coverage**: Parks across multiple continents and countries
 - **📱 RESTful Design**: Clean, intuitive API endpoints with consistent responses
 - **🔄 Automatic Updates**: Scheduled queue time synchronization from external sources
 - **📈 Performance-Optimized**: Built for high throughput with efficient data structures
 - **🎯 Intelligent Park Status**: Automatic detection of whether parks are "open" or "closed"
-- **🏁 Top Lists**: Longest/shortest wait times, busiest/quietest parks
+- **🏁 Top Lists**: Longest/shortest wait times, busiest/quietest parks with navigation URLs
 - **⚡ Optimized Caching**: API responses include cache headers with 5-minute TTL for improved performance
+- **🗺️ Hierarchical Navigation**: Every park and ride includes navigable hierarchical URLs
 
 ## 📊 Data Source
 
@@ -622,9 +623,39 @@ GET https://api.park.fan/statistics
         "parkId": 124,
         "parkName": "Disney California Adventure",
         "country": "United States",
+        "continent": "North America",
         "waitTime": 135,
         "isOpen": true,
-        "lastUpdated": "2023-06-04T18:20:15.000Z"
+        "lastUpdated": "2023-06-04T18:20:15.000Z",
+        "hierarchicalUrl": "/parks/north-america/united-states/disney-california-adventure/guardians-of-the-galaxy-mission-breakout",
+        "park": {
+          "id": 124,
+          "name": "Disney California Adventure",
+          "country": "United States",
+          "continent": "North America",
+          "hierarchicalUrl": "/parks/north-america/united-states/disney-california-adventure"
+        }
+      }
+    ],
+    "shortestWaitTimes": [
+      {
+        "rideId": 123,
+        "rideName": "Carousel",
+        "parkId": 30,
+        "parkName": "Phantasialand",
+        "country": "Germany",
+        "continent": "Europe",
+        "waitTime": 5,
+        "isOpen": true,
+        "lastUpdated": "2023-06-04T18:15:33.000Z",
+        "hierarchicalUrl": "/parks/europe/germany/phantasialand/carousel",
+        "park": {
+          "id": 30,
+          "name": "Phantasialand",
+          "country": "Germany",
+          "continent": "Europe",
+          "hierarchicalUrl": "/parks/europe/germany/phantasialand"
+        }
       }
     ],
     "busiestParks": [
@@ -636,7 +667,21 @@ GET https://api.park.fan/statistics
         "averageWaitTime": 52,
         "openRideCount": 21,
         "totalRideCount": 23,
-        "operatingPercentage": 91.3
+        "operatingPercentage": 91.3,
+        "hierarchicalUrl": "/parks/north-america/united-states/epic-universe"
+      }
+    ],
+    "quietestParks": [
+      {
+        "parkId": 67,
+        "parkName": "Example Quiet Park",
+        "country": "Germany",
+        "continent": "Europe",
+        "averageWaitTime": 8,
+        "openRideCount": 12,
+        "totalRideCount": 15,
+        "operatingPercentage": 80.0,
+        "hierarchicalUrl": "/parks/europe/germany/example-quiet-park"
       }
     ]
   },
