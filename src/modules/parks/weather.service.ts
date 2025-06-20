@@ -309,6 +309,97 @@ export class WeatherService {
   }
 
   /**
+   * Fetch weather forecast data from Open-Meteo API (up to 7 days)
+   */
+  async fetchWeatherForecast(
+    latitude: number,
+    longitude: number,
+    timezone: string,
+    days: number = 7,
+  ): Promise<Array<{
+    date: Date;
+    weather: WeatherData;
+    daysAhead: number;
+  }> | null> {
+    try {
+      const params = {
+        latitude: latitude.toString(),
+        longitude: longitude.toString(),
+        timezone,
+        daily: [
+          'temperature_2m_max',
+          'temperature_2m_min',
+          'precipitation_probability_max',
+          'weather_code',
+        ].join(','),
+        forecast_days: Math.min(days, 7), // API supports max 7 days for free tier
+      };
+
+      const response = await axios.get<OpenMeteoResponse>(this.baseUrl, {
+        params,
+        timeout: 10000, // Longer timeout for forecast data
+      });
+      const data = response.data;
+
+      if (!data.daily || data.daily.time.length === 0) {
+        this.logger.warn('No forecast data received from Open-Meteo API');
+        return null;
+      }
+
+      const forecasts: Array<{
+        date: Date;
+        weather: WeatherData;
+        daysAhead: number;
+      }> = [];
+
+      for (let i = 0; i < data.daily.time.length; i++) {
+        const dateStr = data.daily.time[i];
+        const date = new Date(dateStr);
+
+        const minTemp = Math.round(data.daily.temperature_2m_min[i]);
+        const maxTemp = Math.round(data.daily.temperature_2m_max[i]);
+        const precipitationProbability =
+          data.daily.precipitation_probability_max[i];
+        const weatherCode = data.daily.weather_code[i];
+
+        const weatherData: WeatherData = {
+          temperature: {
+            min: minTemp,
+            max: maxTemp,
+          },
+          precipitationProbability,
+          weatherCode,
+          status: this.mapWeatherCodeToStatus(weatherCode),
+          weatherScore: this.calculateWeatherScore(
+            weatherCode,
+            precipitationProbability,
+            minTemp,
+            maxTemp,
+          ),
+        };
+
+        forecasts.push({
+          date,
+          weather: weatherData,
+          daysAhead: i,
+        });
+      }
+
+      this.logger.debug(
+        `Weather forecast retrieved for coordinates (${latitude}, ${longitude}): ${forecasts.length} days`,
+      );
+
+      return forecasts;
+    } catch (error) {
+      this.logger.error(
+        `Error fetching weather forecast for coordinates (${latitude}, ${longitude}):`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Process the request queue to limit concurrent API calls
    */
   private async processQueue(): Promise<void> {

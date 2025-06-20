@@ -71,7 +71,7 @@ export class HierarchicalUrlService {
     // Convert hyphen-separated slug back to possible original forms
     const withSpaces = slug.replace(/-/g, ' ');
     const withDots = slug.replace(/-/g, '.');
-    
+
     const variations = [
       slug,
       withSpaces,
@@ -89,11 +89,15 @@ export class HierarchicalUrlService {
   static slugMatches(slug: string, originalText: string): boolean {
     const normalizedSlug = this.normalizeForComparison(slug.replace(/-/g, ' '));
     const normalizedOriginal = this.normalizeForComparison(originalText);
-    const generatedSlug = this.normalizeForComparison(this.toSlug(originalText).replace(/-/g, ' '));
-    
-    return normalizedSlug === normalizedOriginal || 
-           normalizedSlug === generatedSlug ||
-           this.toSlug(originalText) === slug;
+    const generatedSlug = this.normalizeForComparison(
+      this.toSlug(originalText).replace(/-/g, ' '),
+    );
+
+    return (
+      normalizedSlug === normalizedOriginal ||
+      normalizedSlug === generatedSlug ||
+      this.toSlug(originalText) === slug
+    );
   }
 
   /**

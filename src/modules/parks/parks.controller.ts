@@ -170,8 +170,14 @@ export class ParksController {
 
     // Find matching park using improved slug matching
     const matchingPark = allParks.data.find((park) => {
-      const continentMatch = HierarchicalUrlService.slugMatches(continentSlug, park.continent);
-      const countryMatch = HierarchicalUrlService.slugMatches(countrySlug, park.country);
+      const continentMatch = HierarchicalUrlService.slugMatches(
+        continentSlug,
+        park.continent,
+      );
+      const countryMatch = HierarchicalUrlService.slugMatches(
+        countrySlug,
+        park.country,
+      );
       const parkMatch = HierarchicalUrlService.slugMatches(parkSlug, park.name);
       return continentMatch && countryMatch && parkMatch;
     });
@@ -224,8 +230,14 @@ export class ParksController {
 
     // Find matching park using improved slug matching
     const matchingPark = allParks.data.find((park) => {
-      const continentMatch = HierarchicalUrlService.slugMatches(continentSlug, park.continent);
-      const countryMatch = HierarchicalUrlService.slugMatches(countrySlug, park.country);
+      const continentMatch = HierarchicalUrlService.slugMatches(
+        continentSlug,
+        park.continent,
+      );
+      const countryMatch = HierarchicalUrlService.slugMatches(
+        countrySlug,
+        park.country,
+      );
       const parkMatch = HierarchicalUrlService.slugMatches(parkSlug, park.name);
       return continentMatch && countryMatch && parkMatch;
     });
