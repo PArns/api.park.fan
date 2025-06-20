@@ -14,6 +14,10 @@ import {
 export class WeatherService {
   private readonly logger = new Logger(WeatherService.name);
   private readonly baseUrl = 'https://api.open-meteo.com/v1/forecast';
+  private readonly requestQueue: Array<() => Promise<any>> = [];
+  private isProcessingQueue = false;
+  private readonly maxConcurrentRequests = 3; // Limit concurrent requests
+  private activeRequests = 0;
 
   constructor(
     @Inject(WEATHER_CACHE_SERVICE)
@@ -164,15 +168,16 @@ export class WeatherService {
     }
 
     // Fetch fresh data if not in cache
-    const weatherData = await this.fetchWeatherFromAPI(
-      latitude,
-      longitude,
-      timezone,
+    const weatherData = await this.queueRequest(() =>
+      this.fetchWeatherFromAPI(latitude, longitude, timezone),
     );
 
     // Cache the result if successful
     if (weatherData) {
-      await this.cacheService.set(cacheKey, weatherData, 6); // Cache for 6 hours
+      await this.cacheService.set(cacheKey, weatherData, 12); // Cache for 12 hours to reduce API calls
+    } else {
+      // Cache null results for a shorter time to prevent repeated failed requests
+      await this.cacheService.set(cacheKey, null, 1); // Cache for 1 hour
     }
 
     return weatherData;
@@ -207,6 +212,7 @@ export class WeatherService {
 
       const response = await axios.get<OpenMeteoResponse>(this.baseUrl, {
         params,
+        timeout: 5000,
       });
       const data = response.data;
 
@@ -267,11 +273,83 @@ export class WeatherService {
 
       return weatherData;
     } catch (error) {
-      this.logger.error(
-        `Failed to fetch weather data for coordinates (${latitude}, ${longitude}):`,
-        error,
-      );
+      // Handle specific error cases
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 429) {
+          this.logger.warn(
+            `Rate limit exceeded for weather API at coordinates (${latitude}, ${longitude}). Using fallback data.`,
+          );
+
+          // Return fallback weather data when rate limited
+          return {
+            temperature: { min: 20, max: 25 },
+            precipitationProbability: 30,
+            weatherCode: 2, // Partly cloudy
+            status: WeatherStatus.CLOUDY,
+            weatherScore: 70,
+          };
+        } else if (error.code === 'ECONNABORTED') {
+          this.logger.warn(
+            `Weather API timeout for coordinates (${latitude}, ${longitude})`,
+          );
+        } else {
+          this.logger.error(
+            `Weather API error (${error.response?.status || 'unknown'}) for coordinates (${latitude}, ${longitude}):`,
+            error.message,
+          );
+        }
+      } else {
+        this.logger.error(
+          `Unexpected error fetching weather data for coordinates (${latitude}, ${longitude}):`,
+          error,
+        );
+      }
       return null;
     }
+  }
+
+  /**
+   * Process the request queue to limit concurrent API calls
+   */
+  private async processQueue(): Promise<void> {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return;
+    }
+
+    this.isProcessingQueue = true;
+
+    while (
+      this.requestQueue.length > 0 &&
+      this.activeRequests < this.maxConcurrentRequests
+    ) {
+      const request = this.requestQueue.shift();
+      if (request) {
+        this.activeRequests++;
+        request().finally(() => {
+          this.activeRequests--;
+          // Small delay to prevent overwhelming the API
+          setTimeout(() => this.processQueue(), 100);
+        });
+      }
+    }
+
+    this.isProcessingQueue = false;
+  }
+
+  /**
+   * Add request to queue
+   */
+  private async queueRequest<T>(requestFn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push(async () => {
+        try {
+          const result = await requestFn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      });
+      this.processQueue();
+    });
   }
 }

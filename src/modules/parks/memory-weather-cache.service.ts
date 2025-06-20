@@ -63,6 +63,7 @@ export class MemoryWeatherCacheService implements WeatherCacheService {
     }
 
     this.logger.debug(`Cache hit for key: ${stringKey}`);
+    // Return the cached data, even if it's null (to prevent repeated failed requests)
     return entry.data;
   }
 

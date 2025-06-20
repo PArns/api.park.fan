@@ -12,6 +12,7 @@ import { ParksService } from './parks.service.js';
 import { ParkQueryDto } from './parks.dto.js';
 import { RidesService } from '../rides/rides.service.js';
 import { HierarchicalUrlService } from '../utils/hierarchical-url.service.js';
+import { HierarchicalUrlInjectorService } from '../utils/hierarchical-url-injector.service.js';
 import { WEATHER_CACHE_SERVICE } from './weather-cache.interface.js';
 import { WeatherCacheService } from './weather-cache.interface.js';
 
@@ -21,11 +22,11 @@ export class ParksController {
     private readonly parksService: ParksService,
     private readonly ridesService: RidesService,
     private readonly configService: ConfigService,
+    private readonly urlInjector: HierarchicalUrlInjectorService,
     @Inject(WEATHER_CACHE_SERVICE)
     private readonly weatherCache: WeatherCacheService,
   ) {}
 
-  // Readonly API endpoints for parks
   @Get()
   async findAll(@Query() query: ParkQueryDto): Promise<{
     data: any[];
@@ -40,17 +41,10 @@ export class ParksController {
   }> {
     const parks = await this.parksService.findAll(query);
 
-    // Add hierarchical URLs to each park
+    // Add hierarchical URLs to each park using the injector
     const parksWithUrls = {
       ...parks,
-      data: parks.data.map((park) => ({
-        ...park,
-        hierarchicalUrl: HierarchicalUrlService.generateParkUrl(
-          park.continent,
-          park.country,
-          park.name,
-        ),
-      })),
+      data: this.urlInjector.addUrlsToParks(parks.data),
     };
 
     return parksWithUrls;
@@ -84,15 +78,10 @@ export class ParksController {
         includeWeather,
       );
 
-      // Add hierarchical URL to the response
-      return {
+      // Add hierarchical URL to the response using the injector
+      return this.urlInjector.addUrlToPark({
         ...park,
-        hierarchicalUrl: HierarchicalUrlService.generateParkUrl(
-          park.continent,
-          park.country,
-          park.name,
-        ),
-      };
+      });
     }
 
     const continentVariations = HierarchicalUrlService.fromSlug(continentSlug);
@@ -110,17 +99,10 @@ export class ParksController {
       limit: query.limit || 50,
     });
 
-    // Add hierarchical URLs to each park
+    // Add hierarchical URLs to each park using the injector
     const parksWithUrls = {
       ...parks,
-      data: parks.data.map((park) => ({
-        ...park,
-        hierarchicalUrl: HierarchicalUrlService.generateParkUrl(
-          park.continent,
-          park.country,
-          park.name,
-        ),
-      })),
+      data: this.urlInjector.addUrlsToParks(parks.data),
     };
 
     return parksWithUrls;
@@ -159,17 +141,10 @@ export class ParksController {
       limit: query.limit || 50,
     });
 
-    // Add hierarchical URLs to each park
+    // Add hierarchical URLs to each park using the injector
     const parksWithUrls = {
       ...parks,
-      data: parks.data.map((park) => ({
-        ...park,
-        hierarchicalUrl: HierarchicalUrlService.generateParkUrl(
-          park.continent,
-          park.country,
-          park.name,
-        ),
-      })),
+      data: this.urlInjector.addUrlsToParks(parks.data),
     };
 
     return parksWithUrls;
@@ -230,17 +205,8 @@ export class ParksController {
       includeWeather,
     );
 
-    // Add hierarchical URL to the response
-    const hierarchicalUrl = HierarchicalUrlService.generateParkUrl(
-      parkDetails.continent,
-      parkDetails.country,
-      parkDetails.name,
-    );
-
-    return {
-      ...parkDetails,
-      hierarchicalUrl,
-    };
+    // Add hierarchical URL to the response using the injector
+    return this.urlInjector.addUrlToParkWithDetails(parkDetails);
   }
 
   /**
@@ -299,31 +265,9 @@ export class ParksController {
       );
     }
 
-    // Return detailed ride information
+    // Return detailed ride information with URLs using the injector
     const rideDetails = await this.ridesService.findOne(matchingRide.id);
-
-    // Add hierarchical URLs to the response
-    const rideHierarchicalUrl = HierarchicalUrlService.generateRideUrl(
-      rideDetails.park.continent,
-      rideDetails.park.country,
-      rideDetails.park.name,
-      rideDetails.name,
-    );
-
-    const parkHierarchicalUrl = HierarchicalUrlService.generateParkUrl(
-      rideDetails.park.continent,
-      rideDetails.park.country,
-      rideDetails.park.name,
-    );
-
-    return {
-      ...rideDetails,
-      hierarchicalUrl: rideHierarchicalUrl,
-      park: {
-        ...rideDetails.park,
-        hierarchicalUrl: parkHierarchicalUrl,
-      },
-    };
+    return this.urlInjector.addUrlToRide(rideDetails);
   }
 
   // Specific ID routes
