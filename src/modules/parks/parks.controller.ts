@@ -168,17 +168,11 @@ export class ParksController {
     // Find all parks first
     const allParks = await this.parksService.findAll({ limit: 1000 });
 
-    // Find matching park
+    // Find matching park using improved slug matching
     const matchingPark = allParks.data.find((park) => {
-      const continentMatch = continentVariations.some(
-        (variation) => park.continent.toLowerCase() === variation.toLowerCase(),
-      );
-      const countryMatch = countryVariations.some(
-        (variation) => park.country.toLowerCase() === variation.toLowerCase(),
-      );
-      const parkMatch = parkVariations.some(
-        (variation) => park.name.toLowerCase() === variation.toLowerCase(),
-      );
+      const continentMatch = HierarchicalUrlService.slugMatches(continentSlug, park.continent);
+      const countryMatch = HierarchicalUrlService.slugMatches(countrySlug, park.country);
+      const parkMatch = HierarchicalUrlService.slugMatches(parkSlug, park.name);
       return continentMatch && countryMatch && parkMatch;
     });
 
@@ -228,18 +222,11 @@ export class ParksController {
     // Find all parks first
     const allParks = await this.parksService.findAll({ limit: 1000 });
 
-    // Find matching park
+    // Find matching park using improved slug matching
     const matchingPark = allParks.data.find((park) => {
-      const continentMatch = continentVariations.some(
-        (variation) => park.continent.toLowerCase() === variation.toLowerCase(),
-      );
-      const countryMatch = countryVariations.some(
-        (variation) => park.country.toLowerCase() === variation.toLowerCase(),
-      );
-      const parkMatch = parkVariations.some(
-        (variation) => park.name.toLowerCase() === variation.toLowerCase(),
-      );
-
+      const continentMatch = HierarchicalUrlService.slugMatches(continentSlug, park.continent);
+      const countryMatch = HierarchicalUrlService.slugMatches(countrySlug, park.country);
+      const parkMatch = HierarchicalUrlService.slugMatches(parkSlug, park.name);
       return continentMatch && countryMatch && parkMatch;
     });
 
@@ -252,11 +239,9 @@ export class ParksController {
     // Get all rides for this park
     const parkRides = await this.parksService.findParkRides(matchingPark.id);
 
-    // Find matching ride
+    // Find matching ride using improved slug matching
     const matchingRide = parkRides.rides.find((ride) => {
-      return rideVariations.some(
-        (variation) => ride.name.toLowerCase() === variation.toLowerCase(),
-      );
+      return HierarchicalUrlService.slugMatches(rideSlug, ride.name);
     });
 
     if (!matchingRide) {

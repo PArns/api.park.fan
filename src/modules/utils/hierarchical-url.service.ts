@@ -7,10 +7,12 @@ import { Injectable } from '@nestjs/common';
 export class HierarchicalUrlService {
   /**
    * Convert a string to URL-friendly slug
-   * Removes dots, replaces spaces with hyphens, converts to lowercase
+   * Normalizes accents, removes dots, replaces spaces with hyphens, converts to lowercase
    */
   static toSlug(text: string): string {
     return text
+      .normalize('NFD') // Normalize to decomposed form
+      .replace(/[\u0300-\u036f]/g, '') // Remove diacritical marks (accents)
       .toLowerCase()
       .replace(/\./g, '') // Remove dots
       .replace(/\s+/g, '-') // Replace spaces with hyphens
@@ -51,22 +53,47 @@ export class HierarchicalUrlService {
   }
 
   /**
+   * Normalize text by removing accents and converting to lowercase
+   * Used for comparing slugified text with original text
+   */
+  static normalizeForComparison(text: string): string {
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove diacritical marks
+      .toLowerCase()
+      .trim();
+  }
+
+  /**
    * Convert slug back to possible text variations for matching
    */
   static fromSlug(slug: string): string[] {
     // Convert hyphen-separated slug back to possible original forms
     const withSpaces = slug.replace(/-/g, ' ');
     const withDots = slug.replace(/-/g, '.');
+    
     const variations = [
       slug,
       withSpaces,
       withDots,
-      // Try with different capitalizations
       this.capitalizeWords(withSpaces),
       this.capitalizeWords(withDots),
     ];
 
     return [...new Set(variations)]; // Remove duplicates
+  }
+
+  /**
+   * Check if a slug matches a given text by normalizing both
+   */
+  static slugMatches(slug: string, originalText: string): boolean {
+    const normalizedSlug = this.normalizeForComparison(slug.replace(/-/g, ' '));
+    const normalizedOriginal = this.normalizeForComparison(originalText);
+    const generatedSlug = this.normalizeForComparison(this.toSlug(originalText).replace(/-/g, ' '));
+    
+    return normalizedSlug === normalizedOriginal || 
+           normalizedSlug === generatedSlug ||
+           this.toSlug(originalText) === slug;
   }
 
   /**
