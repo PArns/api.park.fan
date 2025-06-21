@@ -189,22 +189,13 @@ export class ParksController {
     const includeWeather = query.includeWeather ?? true;
 
     // Transform the park data directly since we already have all relations loaded
-    let weatherDataMap = new Map<string, any>();
+    let weatherDataMap = new Map<number, any>();
     if (includeWeather) {
       try {
-        const locations = [
-          {
-            latitude: matchingPark.latitude,
-            longitude: matchingPark.longitude,
-            timezone: matchingPark.timezone,
-            id: matchingPark.id,
-          },
-        ];
+        const parkIds = [matchingPark.id];
 
         weatherDataMap =
-          await this.weatherService.getBatchCachedWeatherForLocations(
-            locations,
-          );
+          await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
       } catch (error) {
         this.logger.warn(
           'Error retrieving weather data for hierarchical park:',

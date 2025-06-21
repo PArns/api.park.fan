@@ -23,4 +23,16 @@ export interface WeatherCacheService {
     timezone: string,
     date?: Date,
   ): WeatherCacheKey;
+
+  // Park-specific weather methods
+  getCurrentWeatherForPark(parkId: number): Promise<any | null>;
+  getForecastWeatherForPark(parkId: number): Promise<any[]>;
+  getCompleteWeatherForPark(parkId: number): Promise<{
+    current: any | null;
+    forecast: any[];
+  }>;
+  getBatchCompleteWeatherForParks(parkIds: number[]): Promise<Map<number, {
+    current: any | null;
+    forecast: any[];
+  }>>;
 }

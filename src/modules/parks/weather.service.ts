@@ -146,6 +146,8 @@ export class WeatherService {
 
   /**
    * Get weather data for a specific location with caching
+   * Note: Direct coordinate-based caching is now disabled.
+   * Weather data is cached at park level by the background service.
    */
   async getWeatherForLocation(
     latitude: number,
@@ -166,94 +168,34 @@ export class WeatherService {
       return null;
     }
 
-    // Check cache first
-    const cacheKey = this.cacheService.generateKey(latNum, lngNum, timezone);
-    const cachedData = await this.cacheService.get(cacheKey);
-
-    if (cachedData) {
-      this.logger.debug(`Using cached weather data for (${latNum}, ${lngNum})`);
-      return cachedData;
-    }
-
-    // Fetch fresh data if not in cache
+    // Fetch fresh data directly from API (no coordinate-based caching)
     const weatherData = await this.queueRequest(() =>
       this.fetchWeatherFromAPI(latNum, lngNum, timezone),
     );
-
-    // Cache the result if successful
-    if (weatherData) {
-      await this.cacheService.set(cacheKey, weatherData, 12); // Cache for 12 hours to reduce API calls
-    } else {
-      // Cache null results for a shorter time to prevent repeated failed requests
-      await this.cacheService.set(cacheKey, null, 1); // Cache for 1 hour
-    }
 
     return weatherData;
   }
 
   /**
    * Get cached weather data only - never makes API calls
-   * This is used for request processing where we don't want to slow down responses
+   * Note: Since we removed coordinate-based caching, this always returns null.
+   * Weather data should be retrieved via park-specific queries.
    */
   async getCachedWeatherForLocation(
     latitude: number,
     longitude: number,
     timezone: string,
   ): Promise<WeatherData | null> {
-    // Ensure coordinates are numbers and handle string inputs from database
-    const latNum =
-      typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
-    const lngNum =
-      typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
-
-    // Validate that we have valid numbers
-    if (isNaN(latNum) || isNaN(lngNum)) {
-      this.logger.debug(
-        `Invalid coordinates provided: latitude=${latitude}, longitude=${longitude}`,
-      );
-      return null;
-    }
-
-    try {
-      // Only check cache, never fetch from API, with timeout to prevent blocking
-      const cacheKey = this.cacheService.generateKey(latNum, lngNum, timezone);
-
-      // Add timeout to prevent slow cache queries from blocking API responses
-      const cachedData = await Promise.race([
-        this.cacheService.get(cacheKey),
-        new Promise<null>(
-          (resolve) =>
-            setTimeout(() => {
-              this.logger.debug(
-                `Cache query timeout for single location ${latNum},${lngNum}`,
-              );
-              resolve(null);
-            }, 1500), // 1.5 seconds timeout for single queries
-        ),
-      ]);
-
-      if (cachedData) {
-        this.logger.debug(
-          `Using cached weather data for (${latNum}, ${lngNum})`,
-        );
-        return cachedData;
-      }
-
-      this.logger.debug(
-        `No cached weather data available for (${latNum}, ${lngNum})`,
-      );
-      return null;
-    } catch (error) {
-      this.logger.debug(
-        `Cache error for ${latNum},${lngNum}: ${error.message}`,
-      );
-      return null;
-    }
+    this.logger.debug(
+      `Coordinate-based cache lookup disabled for ${latitude},${longitude}. Use park-specific weather queries instead.`,
+    );
+    return null;
   }
 
   /**
    * Get cached weather data for multiple locations in batch - never makes API calls
-   * This is optimized for list views where we need weather for many parks
+   * Note: Since we removed coordinate-based caching, this always returns empty results.
+   * Weather data should be retrieved via park-specific queries.
    */
   async getBatchCachedWeatherForLocations(
     locations: Array<{
@@ -265,76 +207,15 @@ export class WeatherService {
   ): Promise<Map<string, WeatherData | null>> {
     const results = new Map<string, WeatherData | null>();
 
-    // Add timeout to prevent slow cache queries from blocking the API
-    const CACHE_TIMEOUT_MS = 2000; // 2 seconds max for cache queries
-
-    // Process all locations in parallel for better performance
-    const weatherPromises = locations.map(async (location) => {
-      const latNum =
-        typeof location.latitude === 'number'
-          ? location.latitude
-          : parseFloat(String(location.latitude));
-      const lngNum =
-        typeof location.longitude === 'number'
-          ? location.longitude
-          : parseFloat(String(location.longitude));
-
-      if (isNaN(latNum) || isNaN(lngNum)) {
-        return {
-          key: `${location.latitude},${location.longitude}`,
-          weather: null,
-        };
-      }
-
-      try {
-        const cacheKey = this.cacheService.generateKey(
-          latNum,
-          lngNum,
-          location.timezone,
-        );
-
-        // Add timeout to cache query to prevent blocking
-        const cachedData = await Promise.race([
-          this.cacheService.get(cacheKey),
-          new Promise<null>((resolve) =>
-            setTimeout(() => {
-              this.logger.debug(`Cache query timeout for ${latNum},${lngNum}`);
-              resolve(null);
-            }, CACHE_TIMEOUT_MS),
-          ),
-        ]);
-
-        return {
-          key: `${latNum},${lngNum}`,
-          weather: cachedData,
-        };
-      } catch (error) {
-        this.logger.debug(
-          `Cache error for ${latNum},${lngNum}: ${error.message}`,
-        );
-        return {
-          key: `${latNum},${lngNum}`,
-          weather: null,
-        };
-      }
+    // Return empty results since coordinate-based caching is disabled
+    locations.forEach((location) => {
+      const key = `${location.latitude},${location.longitude}`;
+      results.set(key, null);
     });
 
-    try {
-      const weatherResults = await Promise.all(weatherPromises);
-
-      weatherResults.forEach((result) => {
-        results.set(result.key, result.weather);
-      });
-
-      this.logger.debug(
-        `Retrieved cached weather data for ${results.size} locations`,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Batch weather cache retrieval failed: ${error.message}`,
-      );
-      // Return empty map on error to avoid blocking
-    }
+    this.logger.debug(
+      `Coordinate-based batch cache lookup disabled for ${locations.length} locations. Use park-specific weather queries instead.`,
+    );
 
     return results;
   }
@@ -556,6 +437,125 @@ export class WeatherService {
   }
 
   /**
+   * Get current weather data for a park (cached data only)
+   */
+  async getCurrentWeatherForPark(parkId: number): Promise<WeatherData | null> {
+    try {
+      const weatherEntity = await this.cacheService.getCurrentWeatherForPark(parkId);
+      if (!weatherEntity) {
+        return null;
+      }
+
+      return this.convertEntityToWeatherData(weatherEntity);
+    } catch (error) {
+      this.logger.error(
+        `Error retrieving current weather for park ${parkId}:`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Get forecast weather data for a park (cached data only)
+   */
+  async getForecastWeatherForPark(parkId: number): Promise<WeatherData[]> {
+    try {
+      const forecastEntities = await this.cacheService.getForecastWeatherForPark(parkId);
+      return forecastEntities.map(entity => this.convertEntityToWeatherData(entity));
+    } catch (error) {
+      this.logger.error(
+        `Error retrieving forecast weather for park ${parkId}:`,
+        error,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Get complete weather data for a park (current + forecast)
+   */
+  async getCompleteWeatherForPark(parkId: number): Promise<{
+    current: WeatherData | null;
+    forecast: WeatherData[];
+  }> {
+    try {
+      const weatherData = await this.cacheService.getCompleteWeatherForPark(parkId);
+      
+      return {
+        current: weatherData.current ? this.convertEntityToWeatherData(weatherData.current) : null,
+        forecast: weatherData.forecast.map(entity => this.convertEntityToWeatherData(entity)),
+      };
+    } catch (error) {
+      this.logger.error(
+        `Error retrieving complete weather for park ${parkId}:`,
+        error,
+      );
+      return { current: null, forecast: [] };
+    }
+  }
+
+  /**
+   * Get weather data for multiple parks in batch
+   */
+  async getBatchCompleteWeatherForParks(parkIds: number[]): Promise<Map<number, {
+    current: WeatherData | null;
+    forecast: WeatherData[];
+  }>> {
+    try {
+      const weatherDataMap = await this.cacheService.getBatchCompleteWeatherForParks(parkIds);
+      const results = new Map<number, {
+        current: WeatherData | null;
+        forecast: WeatherData[];
+      }>();
+
+      for (const [parkId, weatherData] of weatherDataMap) {
+        results.set(parkId, {
+          current: weatherData.current ? this.convertEntityToWeatherData(weatherData.current) : null,
+          forecast: weatherData.forecast.map(entity => this.convertEntityToWeatherData(entity)),
+        });
+      }
+
+      return results;
+    } catch (error) {
+      this.logger.error(
+        `Error retrieving batch weather for parks ${parkIds.join(', ')}:`,
+        error,
+      );
+      return new Map();
+    }
+  }
+
+  /**
+   * Convert WeatherDataEntity to WeatherData DTO
+   */
+  private convertEntityToWeatherData(entity: any): WeatherData {
+    const weatherData: WeatherData = {
+      temperature: {
+        min: entity.temperatureMin,
+        max: entity.temperatureMax,
+      },
+      precipitationProbability: entity.precipitationProbability,
+      weatherCode: entity.weatherCode,
+      status: entity.status,
+      weatherScore: entity.weatherScore,
+    };
+
+    // Add date for forecast data only (not for current weather)
+    if (entity.dataType === 'forecast' && entity.weatherDate) {
+      // Handle both Date objects and strings
+      if (entity.weatherDate instanceof Date) {
+        weatherData.date = entity.weatherDate.toISOString().split('T')[0]; // YYYY-MM-DD format
+      } else if (typeof entity.weatherDate === 'string') {
+        // If it's already a string, extract just the date part
+        weatherData.date = entity.weatherDate.split('T')[0];
+      }
+    }
+
+    return weatherData;
+  }
+
+  /**
    * Process the request queue to limit concurrent API calls
    */
   private processQueue(): void {
@@ -604,68 +604,17 @@ export class WeatherService {
 
   /**
    * Trigger immediate weather cache update for missing data
-   * This is called when we detect missing weather data to warm the cache
+   * Note: Since coordinate-based caching is disabled, this method is deprecated.
+   * Weather updates are now handled by the background service at park level.
    */
   async triggerImmediateWeatherUpdate(
     latitude: number,
     longitude: number,
     timezone: string,
   ): Promise<void> {
-    try {
-      // Check if we already have cached data
-      const cacheKey = this.cacheService.generateKey(
-        latitude,
-        longitude,
-        timezone,
-      );
-      const existingData = await this.cacheService.get(cacheKey);
-
-      if (existingData) {
-        this.logger.debug(
-          `Weather data already cached for ${latitude},${longitude}`,
-        );
-        return;
-      }
-
-      // Trigger background update without blocking the current request
-      setImmediate(async () => {
-        try {
-          this.logger.debug(
-            `Triggering immediate weather update for ${latitude},${longitude}`,
-          );
-          const weatherData = await this.queueRequest(() =>
-            this.fetchWeatherFromAPI(latitude, longitude, timezone),
-          );
-
-          if (weatherData) {
-            await this.cacheService.set(cacheKey, weatherData, 12);
-            this.logger.debug(
-              `Successfully cached weather data for ${latitude},${longitude}`,
-            );
-          } else {
-            // Cache failed result to prevent repeated attempts
-            await this.cacheService.set(cacheKey, null, 1);
-            this.logger.debug(
-              `Cached failed weather fetch for ${latitude},${longitude}`,
-            );
-          }
-        } catch (error) {
-          this.logger.warn(
-            `Failed to fetch weather for ${latitude},${longitude}: ${error.message}`,
-          );
-          try {
-            await this.cacheService.set(cacheKey, null, 0.5); // Cache failure for 30 minutes
-          } catch (cacheError) {
-            this.logger.warn(
-              `Failed to cache weather failure: ${cacheError.message}`,
-            );
-          }
-        }
-      });
-    } catch (error) {
-      this.logger.warn(
-        `Error in triggerImmediateWeatherUpdate: ${error.message}`,
-      );
-    }
+    this.logger.debug(
+      `Coordinate-based cache update disabled for ${latitude},${longitude}. Weather updates are handled by background service at park level.`,
+    );
+    return;
   }
 }

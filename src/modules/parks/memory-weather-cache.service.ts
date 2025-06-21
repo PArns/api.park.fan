@@ -139,4 +139,40 @@ export class MemoryWeatherCacheService implements WeatherCacheService {
 
     return removed;
   }
+
+  // Park-specific weather methods (not implemented for memory cache)
+  // These delegate to database cache service instead
+  async getCurrentWeatherForPark(parkId: number): Promise<any | null> {
+    this.logger.debug(
+      `Park-specific weather methods not implemented in memory cache for park ${parkId}. Use database cache service instead.`,
+    );
+    return null;
+  }
+
+  async getForecastWeatherForPark(parkId: number): Promise<any[]> {
+    this.logger.debug(
+      `Park-specific weather methods not implemented in memory cache for park ${parkId}. Use database cache service instead.`,
+    );
+    return [];
+  }
+
+  async getCompleteWeatherForPark(parkId: number): Promise<{
+    current: any | null;
+    forecast: any[];
+  }> {
+    this.logger.debug(
+      `Park-specific weather methods not implemented in memory cache for park ${parkId}. Use database cache service instead.`,
+    );
+    return { current: null, forecast: [] };
+  }
+
+  async getBatchCompleteWeatherForParks(parkIds: number[]): Promise<Map<number, {
+    current: any | null;
+    forecast: any[];
+  }>> {
+    this.logger.debug(
+      `Park-specific weather methods not implemented in memory cache for parks ${parkIds.join(', ')}. Use database cache service instead.`,
+    );
+    return new Map();
+  }
 }

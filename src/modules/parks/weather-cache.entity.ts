@@ -21,23 +21,14 @@ export enum WeatherDataType {
 @Index(['park', 'weatherDate', 'dataType'], { unique: true })
 export class WeatherData {
   @PrimaryColumn({ type: 'varchar', length: 200 })
-  id: string; // Format: park_id_date_type
+  id: string; // Format: park_id_date_type_daysAhead
 
-  @ManyToOne(() => Park, { eager: false, nullable: true })
+  @ManyToOne(() => Park, { eager: false, nullable: false })
   @JoinColumn({ name: 'park_id' })
-  park?: Park;
+  park: Park;
 
-  @Column({ name: 'park_id', nullable: true })
-  parkId?: number;
-
-  @Column({ type: 'decimal', precision: 10, scale: 7 })
-  latitude: number;
-
-  @Column({ type: 'decimal', precision: 10, scale: 7 })
-  longitude: number;
-
-  @Column({ type: 'varchar', length: 100 })
-  timezone: string;
+  @Column({ name: 'park_id' })
+  parkId: number;
 
   @Column({ type: 'date' })
   weatherDate: Date;

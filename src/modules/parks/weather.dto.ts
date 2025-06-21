@@ -1,4 +1,5 @@
 export interface WeatherData {
+  date?: string; // ISO date string (YYYY-MM-DD) in UTC - only present for forecast data
   temperature: {
     min: number;
     max: number;
@@ -37,4 +38,15 @@ export interface OpenMeteoResponse {
     weather_code: number[];
     precipitation_probability: number[];
   };
+}
+
+export interface CompleteWeatherData {
+  current: WeatherData | null;
+  forecast: WeatherData[];
+}
+
+export interface ForecastDay {
+  date: Date;
+  weather: WeatherData;
+  daysAhead: number;
 }

@@ -94,16 +94,12 @@ export class ParksService {
     const openStatus = this.calculateParkOpenStatus(park, openThreshold);
     const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
 
-    // Get cached weather data only - never make API calls during request processing
-    let weather = null;
+    // Get cached weather data for park (current + forecast) - never make API calls during request processing
+    let weatherData = null;
     if (includeWeather) {
       try {
-        // Use the cache-only method to avoid API calls during request processing
-        weather = await this.weatherService.getCachedWeatherForLocation(
-          park.latitude,
-          park.longitude,
-          park.timezone,
-        );
+        // Use park-specific weather method that includes current weather and forecast
+        weatherData = await this.weatherService.getCompleteWeatherForPark(park.id);
       } catch (error) {
         this.logger.debug(
           `Error getting cached weather data for park ${park.id}: ${error.message}`,
@@ -151,8 +147,11 @@ export class ParksService {
     };
 
     // Add weather data only if requested and available
-    if (includeWeather && weather) {
-      result.weather = weather;
+    if (includeWeather && weatherData && (weatherData.current || weatherData.forecast.length > 0)) {
+      result.weather = {
+        current: weatherData.current,
+        forecast: weatherData.forecast,
+      };
     }
 
     // Only calculate and include crowd level if requested
@@ -190,7 +189,7 @@ export class ParksService {
    */
   async transformParkWithWeatherData(
     park: any,
-    weatherDataMap: Map<string, any>,
+    weatherDataMap: Map<number, any>, // Changed from coordinate-based to park-ID-based Map
     openThreshold?: number,
     includeCrowdLevel: boolean = true,
     includeWeather: boolean = true,
@@ -198,19 +197,10 @@ export class ParksService {
     const openStatus = this.calculateParkOpenStatus(park, openThreshold);
     const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
 
-    // Get pre-fetched weather data from map
-    let weather = null;
+    // Get pre-fetched weather data from map using park ID
+    let weatherData = null;
     if (includeWeather && weatherDataMap.size > 0) {
-      const latNum =
-        typeof park.latitude === 'number'
-          ? park.latitude
-          : parseFloat(String(park.latitude));
-      const lngNum =
-        typeof park.longitude === 'number'
-          ? park.longitude
-          : parseFloat(String(park.longitude));
-      const weatherKey = `${latNum},${lngNum}`;
-      weather = weatherDataMap.get(weatherKey) || null;
+      weatherData = weatherDataMap.get(park.id) || null;
     }
 
     // Handle parks with and without theme areas
@@ -252,8 +242,11 @@ export class ParksService {
     };
 
     // Add weather data only if requested and available
-    if (includeWeather && weather) {
-      result.weather = weather;
+    if (includeWeather && weatherData && (weatherData.current || weatherData.forecast.length > 0)) {
+      result.weather = {
+        current: weatherData.current,
+        forecast: weatherData.forecast,
+      };
     }
 
     // Only calculate and include crowd level if requested
@@ -356,21 +349,14 @@ export class ParksService {
     const parks = await queryBuilder.getMany();
 
     // Optimize weather data retrieval for multiple parks
-    let weatherDataMap = new Map<string, any>();
+    let weatherDataMap = new Map<number, any>();
     if (includeWeather && parks.length > 0) {
       try {
-        // Get all weather data in one batch call instead of individual calls
-        const locations = parks.map((park) => ({
-          latitude: park.latitude,
-          longitude: park.longitude,
-          timezone: park.timezone,
-          id: park.id,
-        }));
+        // Get all weather data in one batch call using park IDs
+        const parkIds = parks.map((park) => park.id);
 
         weatherDataMap =
-          await this.weatherService.getBatchCachedWeatherForLocations(
-            locations,
-          );
+          await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
       } catch (error) {
         this.logger.warn('Error retrieving batch weather data:', error);
         // Continue without weather data if batch fails
@@ -539,22 +525,13 @@ export class ParksService {
     }
 
     // For single park, we can still use the optimized method with a single-item map
-    let weatherDataMap = new Map<string, any>();
+    let weatherDataMap = new Map<number, any>();
     if (includeWeather) {
       try {
-        const locations = [
-          {
-            latitude: park.latitude,
-            longitude: park.longitude,
-            timezone: park.timezone,
-            id: park.id,
-          },
-        ];
+        const parkIds = [park.id];
 
         weatherDataMap =
-          await this.weatherService.getBatchCachedWeatherForLocations(
-            locations,
-          );
+          await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
       } catch (error) {
         this.logger.warn(
           'Error retrieving weather data for single park:',

@@ -54,46 +54,16 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
   }
 
   /**
-   * Generate string ID for database storage
+   * Generate string ID for database storage (park-specific only)
    */
   private getWeatherDataId(
-    parkId: number | null,
+    parkId: number,
     date: string,
     dataType: WeatherDataType,
     daysAhead?: number,
   ): string {
-    const baseId = parkId
-      ? `park_${parkId}_${date}_${dataType}`
-      : `coord_${date}_${dataType}`;
+    const baseId = `park_${parkId}_${date}_${dataType}`;
     return daysAhead !== undefined ? `${baseId}_${daysAhead}` : baseId;
-  }
-
-  /**
-   * Generate string ID for coordinate-based weather data storage
-   */
-  private getCoordinateWeatherDataId(
-    latitude: number,
-    longitude: number,
-    date: string,
-    dataType: WeatherDataType,
-  ): string {
-    // Ensure coordinates are numbers and handle string inputs from database
-    const latNum =
-      typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
-    const lngNum =
-      typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
-
-    // Validate that we have valid numbers
-    if (isNaN(latNum) || isNaN(lngNum)) {
-      throw new Error(
-        `Invalid coordinates for weather ID: latitude=${latitude}, longitude=${longitude}`,
-      );
-    }
-
-    // Round coordinates to 4 decimal places to group nearby locations
-    const latRounded = latNum.toFixed(4);
-    const lngRounded = lngNum.toFixed(4);
-    return `coord_${latRounded}_${lngRounded}_${date}_${dataType}`;
   }
 
   /**
@@ -178,104 +148,19 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
 
   /**
    * Set weather data in database cache with TTL
+   * This method is deprecated - use setWeatherForPark instead for park-specific data
    */
   async set(
     key: WeatherCacheKey,
     data: WeatherData | null,
     ttlHours: number = 4,
   ): Promise<void> {
-    const now = new Date();
-    const validUntil = new Date(now.getTime() + ttlHours * 60 * 60 * 1000);
-    const weatherId = this.getCoordinateWeatherDataId(
-      key.latitude,
-      key.longitude,
-      key.date,
-      WeatherDataType.CURRENT,
+    // No longer create coordinate-based entries
+    // All weather data should be stored via setWeatherForPark for specific parks
+    this.logger.debug(
+      `Coordinate-based cache storage is deprecated - use setWeatherForPark instead`,
     );
-
-    try {
-      // Check if entry already exists and update it, or create new one
-      let existingEntry = await this.weatherDataRepository.findOne({
-        where: { id: weatherId },
-      });
-
-      if (data === null) {
-        // Store or update failed fetch attempt
-        if (existingEntry) {
-          existingEntry.isFetchFailed = true;
-          existingEntry.validUntil = validUntil;
-          existingEntry.updatedAt = now;
-        } else {
-          existingEntry = this.weatherDataRepository.create({
-            id: weatherId,
-            latitude: key.latitude,
-            longitude: key.longitude,
-            timezone: key.timezone,
-            weatherDate: new Date(key.date),
-            dataType: WeatherDataType.CURRENT,
-            temperatureMin: 0,
-            temperatureMax: 0,
-            precipitationProbability: 0,
-            weatherCode: 0,
-            status: 'cloudy' as any,
-            weatherScore: 0,
-            validUntil,
-            isFetchFailed: true,
-          });
-        }
-
-        await this.weatherDataRepository.save(existingEntry);
-        this.logger.debug(
-          `Cached failed weather fetch for coordinates: ${key.latitude},${key.longitude}, expires at: ${validUntil.toISOString()}`,
-        );
-        return;
-      }
-
-      // Store or update successful weather data
-      if (existingEntry) {
-        // Update existing entry
-        existingEntry.latitude = key.latitude;
-        existingEntry.longitude = key.longitude;
-        existingEntry.timezone = key.timezone;
-        existingEntry.temperatureMin = data.temperature.min;
-        existingEntry.temperatureMax = data.temperature.max;
-        existingEntry.precipitationProbability = data.precipitationProbability;
-        existingEntry.weatherCode = data.weatherCode;
-        existingEntry.status = data.status;
-        existingEntry.weatherScore = data.weatherScore;
-        existingEntry.validUntil = validUntil;
-        existingEntry.isFetchFailed = false;
-        existingEntry.updatedAt = now;
-      } else {
-        // Create new entry
-        existingEntry = this.weatherDataRepository.create({
-          id: weatherId,
-          latitude: key.latitude,
-          longitude: key.longitude,
-          timezone: key.timezone,
-          weatherDate: new Date(key.date),
-          dataType: WeatherDataType.CURRENT,
-          temperatureMin: data.temperature.min,
-          temperatureMax: data.temperature.max,
-          precipitationProbability: data.precipitationProbability,
-          weatherCode: data.weatherCode,
-          status: data.status,
-          weatherScore: data.weatherScore,
-          validUntil,
-          isFetchFailed: false,
-        });
-      }
-
-      await this.weatherDataRepository.save(existingEntry);
-      this.logger.debug(
-        `Cached weather data in database for coordinates: ${key.latitude},${key.longitude}, expires at: ${validUntil.toISOString()}`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Error saving weather cache for coordinates ${key.latitude},${key.longitude}:`,
-        error,
-      );
-    }
+    return;
   }
 
   /**
@@ -325,9 +210,6 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
         existingEntry = this.weatherDataRepository.create({
           id: weatherId,
           parkId,
-          latitude: 0, // Will be populated by park relation
-          longitude: 0, // Will be populated by park relation
-          timezone: '', // Will be populated by park relation
           weatherDate: date,
           dataType,
           temperatureMin: data.temperature.min,
@@ -519,6 +401,144 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
         return [];
       }
     }
+  }
+
+  /**
+   * Get current weather data for a park (today's data)
+   */
+  async getCurrentWeatherForPark(parkId: number): Promise<WeatherDataEntity | null> {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Set to start of day
+
+      // First try to get current weather data for today
+      let weatherData = await this.weatherDataRepository
+        .createQueryBuilder('wd')
+        .where('wd.parkId = :parkId', { parkId })
+        .andWhere('wd.weatherDate = :today', { today })
+        .andWhere('wd.dataType = :dataType', {
+          dataType: WeatherDataType.CURRENT,
+        })
+        .andWhere('wd.validUntil > :now', { now: new Date() })
+        .getOne();
+
+      // If no current data, try historical data for today
+      if (!weatherData) {
+        weatherData = await this.weatherDataRepository
+          .createQueryBuilder('wd')
+          .where('wd.parkId = :parkId', { parkId })
+          .andWhere('wd.weatherDate = :today', { today })
+          .andWhere('wd.dataType = :dataType', {
+            dataType: WeatherDataType.HISTORICAL,
+          })
+          .andWhere('wd.validUntil > :now', { now: new Date() })
+          .getOne();
+      }
+
+      // If still no data, try forecast data for today as fallback
+      if (!weatherData) {
+        weatherData = await this.weatherDataRepository
+          .createQueryBuilder('wd')
+          .where('wd.parkId = :parkId', { parkId })
+          .andWhere('wd.weatherDate = :today', { today })
+          .andWhere('wd.dataType = :dataType', {
+            dataType: WeatherDataType.FORECAST,
+          })
+          .andWhere('wd.validUntil > :now', { now: new Date() })
+          .getOne();
+      }
+
+      return weatherData;
+    } catch (error) {
+      this.logger.error(
+        `Error retrieving current weather for park ${parkId}:`,
+        error,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Get forecast weather data for a park (next 7 days)
+   */
+  async getForecastWeatherForPark(parkId: number): Promise<WeatherDataEntity[]> {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0); // Set to start of day
+
+      const forecasts = await this.weatherDataRepository
+        .createQueryBuilder('wd')
+        .where('wd.parkId = :parkId', { parkId })
+        .andWhere('wd.weatherDate >= :today', { today })
+        .andWhere('wd.dataType = :dataType', {
+          dataType: WeatherDataType.FORECAST,
+        })
+        .andWhere('wd.validUntil > :now', { now: new Date() })
+        .orderBy('wd.weatherDate', 'ASC')
+        .limit(7) // Limit to 7 days
+        .getMany();
+
+      return forecasts;
+    } catch (error) {
+      this.logger.error(
+        `Error retrieving forecast weather for park ${parkId}:`,
+        error,
+      );
+      return [];
+    }
+  }
+
+  /**
+   * Get combined current weather and forecast for a park
+   */
+  async getCompleteWeatherForPark(parkId: number): Promise<{
+    current: WeatherDataEntity | null;
+    forecast: WeatherDataEntity[];
+  }> {
+    try {
+      const [current, forecast] = await Promise.all([
+        this.getCurrentWeatherForPark(parkId),
+        this.getForecastWeatherForPark(parkId),
+      ]);
+
+      return { current, forecast };
+    } catch (error) {
+      this.logger.error(
+        `Error retrieving complete weather for park ${parkId}:`,
+        error,
+      );
+      return { current: null, forecast: [] };
+    }
+  }
+
+  /**
+   * Get weather data for multiple parks in batch
+   */
+  async getBatchCompleteWeatherForParks(parkIds: number[]): Promise<Map<number, {
+    current: WeatherDataEntity | null;
+    forecast: WeatherDataEntity[];
+  }>> {
+    const results = new Map<number, {
+      current: WeatherDataEntity | null;
+      forecast: WeatherDataEntity[];
+    }>();
+
+    try {
+      // Process parks in parallel
+      const weatherPromises = parkIds.map(async (parkId) => {
+        const weatherData = await this.getCompleteWeatherForPark(parkId);
+        results.set(parkId, weatherData);
+      });
+
+      await Promise.all(weatherPromises);
+    } catch (error) {
+      this.logger.error(
+        `Error retrieving batch weather for parks ${parkIds.join(', ')}:`,
+        error,
+      );
+    }
+
+    return results;
   }
 
   /**
