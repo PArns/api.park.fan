@@ -5,6 +5,7 @@ import { QueueTimesParserService } from './queue-times-parser.service';
 @Injectable()
 export class QueueTimesScheduler implements OnModuleInit {
   private readonly logger = new Logger(QueueTimesScheduler.name);
+  private initialDataFetchCompleted = false;
 
   constructor(private readonly parser: QueueTimesParserService) {}
   onModuleInit() {
@@ -28,6 +29,7 @@ export class QueueTimesScheduler implements OnModuleInit {
 
       await this.parser.fetchAndStoreQueueTimes();
       this.logger.log('Initial queue times fetch completed');
+      this.initialDataFetchCompleted = true;
     } catch (error) {
       this.logger.error('Error during initial data fetch:', error);
       // Retry in 30 seconds if initial fetch fails
@@ -67,6 +69,12 @@ export class QueueTimesScheduler implements OnModuleInit {
 
   @Cron('*/5 * * * *')
   async fetchQueueTimes() {
+    // Wait for initial data fetch to complete before running scheduled updates
+    if (!this.initialDataFetchCompleted) {
+      this.logger.log('Skipping scheduled queue times update - initial fetch not completed yet');
+      return;
+    }
+    
     await this.parser.fetchAndStoreQueueTimes();
   }
 }

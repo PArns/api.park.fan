@@ -11,6 +11,8 @@ import axios from 'axios';
 @Injectable()
 export class QueueTimesParserService {
   private readonly logger = new Logger(QueueTimesParserService.name);
+  private isParksUpdateRunning = false;
+  private isQueueTimesUpdateRunning = false;
 
   constructor(
     @InjectRepository(ParkGroup)
@@ -26,6 +28,12 @@ export class QueueTimesParserService {
   ) {}
 
   async fetchAndStoreParks(): Promise<void> {
+    if (this.isParksUpdateRunning) {
+      this.logger.warn('Parks update is already running, skipping this execution');
+      return;
+    }
+
+    this.isParksUpdateRunning = true;
     try {
       const url = 'https://queue-times.com/parks.json';
       this.logger.log(`Fetching parks from ${url}`);
@@ -68,26 +76,35 @@ export class QueueTimesParserService {
     } catch (error) {
       this.logger.error('Failed to fetch and store parks', error);
       throw error;
+    } finally {
+      this.isParksUpdateRunning = false;
     }
   }
   async fetchAndStoreQueueTimes(): Promise<void> {
-    const parks = await this.parkRepository.find();
-    this.logger.log(`Processing queue times for ${parks.length} parks`);
+    if (this.isQueueTimesUpdateRunning) {
+      this.logger.warn('Queue times update is already running, skipping this execution');
+      return;
+    }
 
-    let totalNewEntries = 0;
-    let totalSkippedEntries = 0;
-    let totalProcessedParks = 0;
+    this.isQueueTimesUpdateRunning = true;
+    try {
+      const parks = await this.parkRepository.find();
+      this.logger.log(`Processing queue times for ${parks.length} parks`);
 
-    for (const park of parks) {
-      try {
-        const url = `https://queue-times.com/parks/${park.queueTimesId}/queue_times.json`;
+      let totalNewEntries = 0;
+      let totalSkippedEntries = 0;
+      let totalProcessedParks = 0;
 
-        const response = await axios.get(url);
-        const data = response.data;
-        const lands = data.lands || [];
+      for (const park of parks) {
+        try {
+          const url = `https://queue-times.com/parks/${park.queueTimesId}/queue_times.json`;
 
-        let parkNewEntries = 0;
-        let parkSkippedEntries = 0;
+          const response = await axios.get(url);
+          const data = response.data;
+          const lands = data.lands || [];
+
+          let parkNewEntries = 0;
+          let parkSkippedEntries = 0;
         for (const landData of lands) {
           try {
             // Create or update theme area
@@ -219,6 +236,12 @@ export class QueueTimesParserService {
     this.logger.log(
       `Queue times update completed: ${totalProcessedParks} parks processed, ${totalNewEntries} new entries, ${totalSkippedEntries} skipped (no new data)`,
     );
+    } catch (error) {
+      this.logger.error('Failed to process queue times update', error);
+      throw error;
+    } finally {
+      this.isQueueTimesUpdateRunning = false;
+    }
   }
 
   /**
