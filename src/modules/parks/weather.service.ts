@@ -192,6 +192,101 @@ export class WeatherService {
   }
 
   /**
+   * Get cached weather data only - never makes API calls
+   * This is used for request processing where we don't want to slow down responses
+   */
+  async getCachedWeatherForLocation(
+    latitude: number,
+    longitude: number,
+    timezone: string,
+  ): Promise<WeatherData | null> {
+    // Ensure coordinates are numbers and handle string inputs from database
+    const latNum =
+      typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
+    const lngNum =
+      typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
+
+    // Validate that we have valid numbers
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      this.logger.debug(
+        `Invalid coordinates provided: latitude=${latitude}, longitude=${longitude}`,
+      );
+      return null;
+    }
+
+    // Only check cache, never fetch from API
+    const cacheKey = this.cacheService.generateKey(latNum, lngNum, timezone);
+    const cachedData = await this.cacheService.get(cacheKey);
+
+    if (cachedData) {
+      this.logger.debug(`Using cached weather data for (${latNum}, ${lngNum})`);
+      return cachedData;
+    }
+
+    this.logger.debug(
+      `No cached weather data available for (${latNum}, ${lngNum})`,
+    );
+    return null;
+  }
+
+  /**
+   * Get cached weather data for multiple locations in batch - never makes API calls
+   * This is optimized for list views where we need weather for many parks
+   */
+  async getBatchCachedWeatherForLocations(
+    locations: Array<{
+      latitude: number;
+      longitude: number;
+      timezone: string;
+      id?: number;
+    }>,
+  ): Promise<Map<string, WeatherData | null>> {
+    const results = new Map<string, WeatherData | null>();
+
+    // Process all locations in parallel for better performance
+    const weatherPromises = locations.map(async (location) => {
+      const latNum =
+        typeof location.latitude === 'number'
+          ? location.latitude
+          : parseFloat(String(location.latitude));
+      const lngNum =
+        typeof location.longitude === 'number'
+          ? location.longitude
+          : parseFloat(String(location.longitude));
+
+      if (isNaN(latNum) || isNaN(lngNum)) {
+        return {
+          key: `${location.latitude},${location.longitude}`,
+          weather: null,
+        };
+      }
+
+      const cacheKey = this.cacheService.generateKey(
+        latNum,
+        lngNum,
+        location.timezone,
+      );
+      const cachedData = await this.cacheService.get(cacheKey);
+
+      return {
+        key: `${latNum},${lngNum}`,
+        weather: cachedData,
+      };
+    });
+
+    const weatherResults = await Promise.all(weatherPromises);
+
+    weatherResults.forEach((result) => {
+      results.set(result.key, result.weather);
+    });
+
+    this.logger.debug(
+      `Retrieved cached weather data for ${results.size} locations`,
+    );
+    return results;
+  }
+
+  /**
    * Fetch weather data from Open-Meteo API
    */
   private async fetchWeatherFromAPI(

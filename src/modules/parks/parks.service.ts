@@ -94,14 +94,120 @@ export class ParksService {
     const openStatus = this.calculateParkOpenStatus(park, openThreshold);
     const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
 
-    // Get weather data for the park if requested
+    // Get cached weather data only - never make API calls during request processing
     let weather = null;
     if (includeWeather) {
-      weather = await this.weatherService.getWeatherForLocation(
-        park.latitude,
-        park.longitude,
-        park.timezone,
-      );
+      try {
+        // Use the cache-only method to avoid API calls during request processing
+        weather = await this.weatherService.getCachedWeatherForLocation(
+          park.latitude,
+          park.longitude,
+          park.timezone,
+        );
+      } catch (error) {
+        this.logger.debug(
+          `Error getting cached weather data for park ${park.id}: ${error.message}`,
+        );
+        // Don't throw error, just continue without weather data
+      }
+    }
+
+    // Handle parks with and without theme areas
+    let themeAreas = park.themeAreas.map((themeArea) =>
+      this.transformThemeArea(themeArea),
+    );
+
+    // If park has no theme areas but has direct rides, create a virtual theme area
+    if (themeAreas.length === 0 && park.rides && park.rides.length > 0) {
+      // Filter rides that are not already assigned to a theme area
+      const unassignedRides = park.rides.filter((ride) => !ride.themeArea);
+
+      if (unassignedRides.length > 0) {
+        themeAreas = [
+          {
+            id: null,
+            queueTimesId: null,
+            name: 'Rides', // Generic name for rides without theme area
+            rides: unassignedRides.map((ride) => this.transformRide(ride)),
+          },
+        ];
+      }
+    }
+
+    // Create result object by copying specific properties to avoid any unwanted data
+    const result: any = {
+      id: park.id,
+      queueTimesId: park.queueTimesId,
+      name: park.name,
+      country: park.country,
+      continent: park.continent,
+      latitude: park.latitude,
+      longitude: park.longitude,
+      timezone: park.timezone,
+      parkGroup: park.parkGroup,
+      themeAreas: themeAreas,
+      operatingStatus: openStatus,
+      waitTimeDistribution, // Add wait time distribution to park data
+    };
+
+    // Add weather data only if requested and available
+    if (includeWeather && weather) {
+      result.weather = weather;
+    }
+
+    // Only calculate and include crowd level if requested
+    if (includeCrowdLevel) {
+      try {
+        result.crowdLevel =
+          await this.crowdLevelService.calculateCrowdLevel(park);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to calculate crowd level for park ${park.id}:`,
+          error,
+        );
+        // Add default crowd level on error
+        result.crowdLevel = {
+          level: 0,
+          label: 'Very Low',
+          ridesUsed: 0,
+          totalRides: 0,
+          historicalBaseline: 0,
+          currentAverage: 0,
+          confidence: 0,
+          calculatedAt: new Date(),
+        };
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Optimized version of transformPark that uses pre-fetched weather data
+   */
+  private async transformParkWithWeatherData(
+    park: any,
+    weatherDataMap: Map<string, any>,
+    openThreshold?: number,
+    includeCrowdLevel: boolean = true,
+    includeWeather: boolean = true,
+  ) {
+    const openStatus = this.calculateParkOpenStatus(park, openThreshold);
+    const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
+
+    // Get pre-fetched weather data from map
+    let weather = null;
+    if (includeWeather && weatherDataMap.size > 0) {
+      const latNum =
+        typeof park.latitude === 'number'
+          ? park.latitude
+          : parseFloat(String(park.latitude));
+      const lngNum =
+        typeof park.longitude === 'number'
+          ? park.longitude
+          : parseFloat(String(park.longitude));
+      const weatherKey = `${latNum},${lngNum}`;
+      weather = weatherDataMap.get(weatherKey) || null;
     }
 
     // Handle parks with and without theme areas
@@ -253,10 +359,38 @@ export class ParksService {
     const totalCount = await queryBuilder.getCount();
     const parks = await queryBuilder.getMany();
 
+    // Optimize weather data retrieval for multiple parks
+    let weatherDataMap = new Map<string, any>();
+    if (includeWeather && parks.length > 0) {
+      try {
+        // Get all weather data in one batch call instead of individual calls
+        const locations = parks.map((park) => ({
+          latitude: park.latitude,
+          longitude: park.longitude,
+          timezone: park.timezone,
+          id: park.id,
+        }));
+
+        weatherDataMap =
+          await this.weatherService.getBatchCachedWeatherForLocations(
+            locations,
+          );
+      } catch (error) {
+        this.logger.warn('Error retrieving batch weather data:', error);
+        // Continue without weather data if batch fails
+      }
+    }
+
     // Transform the data using helper functions
     const transformedParks = await Promise.all(
       parks.map((park) =>
-        this.transformPark(park, threshold, includeCrowdLevel, includeWeather),
+        this.transformParkWithWeatherData(
+          park,
+          weatherDataMap,
+          threshold,
+          includeCrowdLevel,
+          includeWeather,
+        ),
       ),
     );
 
@@ -303,9 +437,36 @@ export class ParksService {
       throw new NotFoundException(`Park with ID ${id} not found`);
     }
 
+    // For single park, we can still use the optimized method with a single-item map
+    let weatherDataMap = new Map<string, any>();
+    if (includeWeather) {
+      try {
+        const locations = [
+          {
+            latitude: park.latitude,
+            longitude: park.longitude,
+            timezone: park.timezone,
+            id: park.id,
+          },
+        ];
+
+        weatherDataMap =
+          await this.weatherService.getBatchCachedWeatherForLocations(
+            locations,
+          );
+      } catch (error) {
+        this.logger.warn(
+          'Error retrieving weather data for single park:',
+          error,
+        );
+        // Continue without weather data if fails
+      }
+    }
+
     // Transform the data using helper functions
-    return await this.transformPark(
+    return await this.transformParkWithWeatherData(
       park,
+      weatherDataMap,
       openThreshold,
       includeCrowdLevel,
       includeWeather,
