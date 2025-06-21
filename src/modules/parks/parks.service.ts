@@ -159,7 +159,7 @@ export class ParksService {
     if (includeCrowdLevel) {
       try {
         result.crowdLevel =
-          await this.crowdLevelService.calculateCrowdLevel(park);
+          await this.crowdLevelService.calculateCrowdLevelWithTimeout(park, 2000);
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -185,7 +185,7 @@ export class ParksService {
   /**
    * Optimized version of transformPark that uses pre-fetched weather data
    */
-  private async transformParkWithWeatherData(
+  async transformParkWithWeatherData(
     park: any,
     weatherDataMap: Map<string, any>,
     openThreshold?: number,
@@ -257,7 +257,7 @@ export class ParksService {
     if (includeCrowdLevel) {
       try {
         result.crowdLevel =
-          await this.crowdLevelService.calculateCrowdLevel(park);
+          await this.crowdLevelService.calculateCrowdLevelWithTimeout(park, 2000);
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -554,6 +554,172 @@ export class ParksService {
       parkId: park.id,
       parkName: park.name,
       rides: allRides,
+    };
+  }
+
+  /**
+   * Find park by continent, country, and park name using database query
+   * This is much more efficient than loading all parks and filtering
+   */
+  async findParkByHierarchy(
+    continentSlug: string,
+    countrySlug: string,
+    parkSlug: string,
+  ): Promise<any | null> {
+    // Convert slugs to possible name variations
+    const continentVariations = this.generateNameVariations(continentSlug);
+    const countryVariations = this.generateNameVariations(countrySlug);
+    const parkVariations = this.generateNameVariations(parkSlug);
+
+    const queryBuilder = this.parkRepository
+      .createQueryBuilder('park')
+      .leftJoinAndSelect('park.parkGroup', 'parkGroup')
+      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
+      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
+      .leftJoinAndSelect('park.rides', 'rides')
+      .leftJoinAndSelect('themeAreaRides.queueTimes', 'themeAreaQueueTimes')
+      .leftJoinAndSelect('rides.queueTimes', 'rideQueueTimes');
+
+    // Add conditions for continent, country, and park name
+    queryBuilder.where(
+      'LOWER(park.continent) IN (:...continents) AND LOWER(park.country) IN (:...countries) AND LOWER(park.name) IN (:...parks)',
+      {
+        continents: continentVariations.map((v) => v.toLowerCase()),
+        countries: countryVariations.map((v) => v.toLowerCase()),
+        parks: parkVariations.map((v) => v.toLowerCase()),
+      },
+    );
+
+    const park = await queryBuilder.getOne();
+    return park;
+  }
+
+  /**
+   * Find ride by park ID and ride name using database query
+   */
+  async findRideByParkAndName(
+    parkId: number,
+    rideSlug: string,
+  ): Promise<any | null> {
+    const rideVariations = this.generateNameVariations(rideSlug);
+
+    // Query rides from both theme areas and direct park rides
+    const park = await this.parkRepository
+      .createQueryBuilder('park')
+      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
+      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
+      .leftJoinAndSelect('park.rides', 'rides')
+      .leftJoinAndSelect('themeAreaRides.queueTimes', 'themeAreaQueueTimes')
+      .leftJoinAndSelect('rides.queueTimes', 'rideQueueTimes')
+      .where('park.id = :parkId', { parkId })
+      .andWhere(
+        '(LOWER(themeAreaRides.name) IN (:...rideNames) OR LOWER(rides.name) IN (:...rideNames))',
+        {
+          rideNames: rideVariations.map((v) => v.toLowerCase()),
+        },
+      )
+      .getOne();
+
+    if (!park) {
+      return null;
+    }
+
+    // Find the matching ride from theme areas or direct rides
+    for (const themeArea of park.themeAreas) {
+      for (const ride of themeArea.rides) {
+        if (rideVariations.some((variation) =>
+          variation.toLowerCase() === ride.name.toLowerCase(),
+        )) {
+          return {
+            ...this.transformRideWithLatestQueueTime(ride),
+            themeArea: {
+              id: themeArea.id,
+              name: themeArea.name,
+            },
+          };
+        }
+      }
+    }
+
+    for (const ride of park.rides) {
+      if (rideVariations.some((variation) =>
+        variation.toLowerCase() === ride.name.toLowerCase(),
+      )) {
+        return {
+          ...this.transformRideWithLatestQueueTime(ride),
+          themeArea: null,
+        };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Generate name variations from slug for database matching
+   */
+  private generateNameVariations(slug: string): string[] {
+    const variations = new Set<string>();
+
+    // Add original slug
+    variations.add(slug);
+
+    // Add with spaces instead of hyphens
+    variations.add(slug.replace(/-/g, ' '));
+
+    // Add with underscores instead of hyphens
+    variations.add(slug.replace(/-/g, '_'));
+
+    // Add title case version
+    const titleCase = slug
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+    variations.add(titleCase);
+
+    // Add all lowercase
+    variations.add(slug.toLowerCase());
+
+    // Add all uppercase
+    variations.add(slug.toUpperCase());
+
+    return Array.from(variations);
+  }
+
+  /**
+   * Get the latest queue time from an array of queue times
+   */
+  private getLatestQueueTime(queueTimes: any[]): any | null {
+    if (!queueTimes || queueTimes.length === 0) {
+      return null;
+    }
+
+    return queueTimes.reduce((latest, current) => {
+      if (!latest) return current;
+      return new Date(current.lastUpdated) > new Date(latest.lastUpdated)
+        ? current
+        : latest;
+    }, null);
+  }
+
+  /**
+   * Transform ride data with latest queue time
+   */
+  private transformRideWithLatestQueueTime(ride: any): any {
+    const latestQueueTime = this.getLatestQueueTime(ride.queueTimes);
+
+    return {
+      id: ride.id,
+      queueTimesId: ride.queueTimesId,
+      name: ride.name,
+      isActive: ride.isActive,
+      queueTime: latestQueueTime
+        ? {
+            id: latestQueueTime.id,
+            waitTime: latestQueueTime.waitTime,
+            isOpen: latestQueueTime.isOpen,
+            lastUpdated: latestQueueTime.lastUpdated,
+          }
+        : null,
     };
   }
 }

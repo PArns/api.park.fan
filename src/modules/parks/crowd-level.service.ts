@@ -113,6 +113,37 @@ export class CrowdLevelService {
   }
 
   /**
+   * Calculate crowd level for a park with timeout protection
+   */
+  async calculateCrowdLevelWithTimeout(
+    park: ParkType,
+    timeoutMs: number = 2000,
+  ): Promise<CrowdLevel> {
+    return new Promise(async (resolve) => {
+      // Set up timeout
+      const timeoutId = setTimeout(() => {
+        this.logger.warn(
+          `Crowd level calculation timed out after ${timeoutMs}ms for park: ${park.name}`,
+        );
+        resolve(this.getDefaultCrowdLevel(0, 0, 'Calculation timeout'));
+      }, timeoutMs);
+
+      try {
+        const result = await this.calculateCrowdLevel(park);
+        clearTimeout(timeoutId);
+        resolve(result);
+      } catch (error) {
+        clearTimeout(timeoutId);
+        this.logger.error(
+          `Error calculating crowd level for park ${park.name}:`,
+          error,
+        );
+        resolve(this.getDefaultCrowdLevel(0, 0, 'Calculation error'));
+      }
+    });
+  }
+
+  /**
    * Get rides with current queue time data
    */
   private getRidesWithCurrentData(park: ParkType): any[] {

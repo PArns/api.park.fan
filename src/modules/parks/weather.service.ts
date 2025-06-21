@@ -214,19 +214,34 @@ export class WeatherService {
       return null;
     }
 
-    // Only check cache, never fetch from API
-    const cacheKey = this.cacheService.generateKey(latNum, lngNum, timezone);
-    const cachedData = await this.cacheService.get(cacheKey);
+    try {
+      // Only check cache, never fetch from API, with timeout to prevent blocking
+      const cacheKey = this.cacheService.generateKey(latNum, lngNum, timezone);
+      
+      // Add timeout to prevent slow cache queries from blocking API responses
+      const cachedData = await Promise.race([
+        this.cacheService.get(cacheKey),
+        new Promise<null>((resolve) => 
+          setTimeout(() => {
+            this.logger.debug(`Cache query timeout for single location ${latNum},${lngNum}`);
+            resolve(null);
+          }, 1500) // 1.5 seconds timeout for single queries
+        )
+      ]);
 
-    if (cachedData) {
-      this.logger.debug(`Using cached weather data for (${latNum}, ${lngNum})`);
-      return cachedData;
+      if (cachedData) {
+        this.logger.debug(`Using cached weather data for (${latNum}, ${lngNum})`);
+        return cachedData;
+      }
+
+      this.logger.debug(
+        `No cached weather data available for (${latNum}, ${lngNum})`,
+      );
+      return null;
+    } catch (error) {
+      this.logger.debug(`Cache error for ${latNum},${lngNum}: ${error.message}`);
+      return null;
     }
-
-    this.logger.debug(
-      `No cached weather data available for (${latNum}, ${lngNum})`,
-    );
-    return null;
   }
 
   /**
@@ -242,6 +257,9 @@ export class WeatherService {
     }>,
   ): Promise<Map<string, WeatherData | null>> {
     const results = new Map<string, WeatherData | null>();
+
+    // Add timeout to prevent slow cache queries from blocking the API
+    const CACHE_TIMEOUT_MS = 2000; // 2 seconds max for cache queries
 
     // Process all locations in parallel for better performance
     const weatherPromises = locations.map(async (location) => {
@@ -261,28 +279,52 @@ export class WeatherService {
         };
       }
 
-      const cacheKey = this.cacheService.generateKey(
-        latNum,
-        lngNum,
-        location.timezone,
+      try {
+        const cacheKey = this.cacheService.generateKey(
+          latNum,
+          lngNum,
+          location.timezone,
+        );
+        
+        // Add timeout to cache query to prevent blocking
+        const cachedData = await Promise.race([
+          this.cacheService.get(cacheKey),
+          new Promise<null>((resolve) => 
+            setTimeout(() => {
+              this.logger.debug(`Cache query timeout for ${latNum},${lngNum}`);
+              resolve(null);
+            }, CACHE_TIMEOUT_MS)
+          )
+        ]);
+
+        return {
+          key: `${latNum},${lngNum}`,
+          weather: cachedData,
+        };
+      } catch (error) {
+        this.logger.debug(`Cache error for ${latNum},${lngNum}: ${error.message}`);
+        return {
+          key: `${latNum},${lngNum}`,
+          weather: null,
+        };
+      }
+    });
+
+    try {
+      const weatherResults = await Promise.all(weatherPromises);
+
+      weatherResults.forEach((result) => {
+        results.set(result.key, result.weather);
+      });
+
+      this.logger.debug(
+        `Retrieved cached weather data for ${results.size} locations`,
       );
-      const cachedData = await this.cacheService.get(cacheKey);
+    } catch (error) {
+      this.logger.warn(`Batch weather cache retrieval failed: ${error.message}`);
+      // Return empty map on error to avoid blocking
+    }
 
-      return {
-        key: `${latNum},${lngNum}`,
-        weather: cachedData,
-      };
-    });
-
-    const weatherResults = await Promise.all(weatherPromises);
-
-    weatherResults.forEach((result) => {
-      results.set(result.key, result.weather);
-    });
-
-    this.logger.debug(
-      `Retrieved cached weather data for ${results.size} locations`,
-    );
     return results;
   }
 
@@ -547,5 +589,55 @@ export class WeatherService {
       });
       void this.processQueue();
     });
+  }
+
+  /**
+   * Trigger immediate weather cache update for missing data
+   * This is called when we detect missing weather data to warm the cache
+   */
+  async triggerImmediateWeatherUpdate(
+    latitude: number,
+    longitude: number,
+    timezone: string,
+  ): Promise<void> {
+    try {
+      // Check if we already have cached data
+      const cacheKey = this.cacheService.generateKey(latitude, longitude, timezone);
+      const existingData = await this.cacheService.get(cacheKey);
+      
+      if (existingData) {
+        this.logger.debug(`Weather data already cached for ${latitude},${longitude}`);
+        return;
+      }
+
+      // Trigger background update without blocking the current request
+      setImmediate(async () => {
+        try {
+          this.logger.debug(`Triggering immediate weather update for ${latitude},${longitude}`);
+          const weatherData = await this.queueRequest(() =>
+            this.fetchWeatherFromAPI(latitude, longitude, timezone),
+          );
+
+          if (weatherData) {
+            await this.cacheService.set(cacheKey, weatherData, 12);
+            this.logger.debug(`Successfully cached weather data for ${latitude},${longitude}`);
+          } else {
+            // Cache failed result to prevent repeated attempts
+            await this.cacheService.set(cacheKey, null, 1);
+            this.logger.debug(`Cached failed weather fetch for ${latitude},${longitude}`);
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to fetch weather for ${latitude},${longitude}: ${error.message}`);
+          try {
+            await this.cacheService.set(cacheKey, null, 0.5); // Cache failure for 30 minutes
+          } catch (cacheError) {
+            this.logger.warn(`Failed to cache weather failure: ${cacheError.message}`);
+          }
+        }
+      });
+
+    } catch (error) {
+      this.logger.warn(`Error in triggerImmediateWeatherUpdate: ${error.message}`);
+    }
   }
 }

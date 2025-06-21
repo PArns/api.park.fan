@@ -6,9 +6,11 @@ import {
   ParseIntPipe,
   NotFoundException,
   Inject,
+  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ParksService } from './parks.service.js';
+import { WeatherService } from './weather.service.js';
 import { ParkQueryDto } from './parks.dto.js';
 import { RidesService } from '../rides/rides.service.js';
 import { HierarchicalUrlService } from '../utils/hierarchical-url.service.js';
@@ -18,8 +20,11 @@ import { WeatherCacheService } from './weather-cache.interface.js';
 
 @Controller('parks')
 export class ParksController {
+  private readonly logger = new Logger(ParksController.name);
+
   constructor(
     private readonly parksService: ParksService,
+    private readonly weatherService: WeatherService,
     private readonly ridesService: RidesService,
     private readonly configService: ConfigService,
     private readonly urlInjector: HierarchicalUrlInjectorService,
@@ -160,27 +165,12 @@ export class ParksController {
     @Param('park') parkSlug: string,
     @Query() query: ParkQueryDto,
   ): Promise<any> {
-    // Convert slugs back to possible original names
-    const continentVariations = HierarchicalUrlService.fromSlug(continentSlug);
-    const countryVariations = HierarchicalUrlService.fromSlug(countrySlug);
-    const parkVariations = HierarchicalUrlService.fromSlug(parkSlug);
-
-    // Find all parks first
-    const allParks = await this.parksService.findAll({ limit: 1000 });
-
-    // Find matching park using improved slug matching
-    const matchingPark = allParks.data.find((park) => {
-      const continentMatch = HierarchicalUrlService.slugMatches(
-        continentSlug,
-        park.continent,
-      );
-      const countryMatch = HierarchicalUrlService.slugMatches(
-        countrySlug,
-        park.country,
-      );
-      const parkMatch = HierarchicalUrlService.slugMatches(parkSlug, park.name);
-      return continentMatch && countryMatch && parkMatch;
-    });
+    // Use optimized database query instead of loading all parks
+    const matchingPark = await this.parksService.findParkByHierarchy(
+      continentSlug,
+      countrySlug,
+      parkSlug,
+    );
 
     if (!matchingPark) {
       throw new NotFoundException(
@@ -188,7 +178,7 @@ export class ParksController {
       );
     }
 
-    // Get detailed park information
+    // Get query parameters
     const defaultThreshold = this.configService.get<number>(
       'PARK_OPEN_THRESHOLD_PERCENT',
       50,
@@ -198,8 +188,36 @@ export class ParksController {
     const includeCrowdLevel = query.includeCrowdLevel ?? true;
     const includeWeather = query.includeWeather ?? true;
 
-    const parkDetails = await this.parksService.findOne(
-      matchingPark.id,
+    // Transform the park data directly since we already have all relations loaded
+    let weatherDataMap = new Map<string, any>();
+    if (includeWeather) {
+      try {
+        const locations = [
+          {
+            latitude: matchingPark.latitude,
+            longitude: matchingPark.longitude,
+            timezone: matchingPark.timezone,
+            id: matchingPark.id,
+          },
+        ];
+
+        weatherDataMap =
+          await this.weatherService.getBatchCachedWeatherForLocations(
+            locations,
+          );
+      } catch (error) {
+        this.logger.warn(
+          'Error retrieving weather data for hierarchical park:',
+          error,
+        );
+        // Continue without weather data if fails
+      }
+    }
+
+    // Transform the data using helper functions
+    const parkDetails = await this.parksService.transformParkWithWeatherData(
+      matchingPark,
+      weatherDataMap,
       validThreshold,
       includeCrowdLevel,
       includeWeather,
@@ -228,28 +246,12 @@ export class ParksController {
     @Param('park') parkSlug: string,
     @Param('ride') rideSlug: string,
   ): Promise<any> {
-    // First find the park using the same logic as above
-    const continentVariations = HierarchicalUrlService.fromSlug(continentSlug);
-    const countryVariations = HierarchicalUrlService.fromSlug(countrySlug);
-    const parkVariations = HierarchicalUrlService.fromSlug(parkSlug);
-    const rideVariations = HierarchicalUrlService.fromSlug(rideSlug);
-
-    // Find all parks first
-    const allParks = await this.parksService.findAll({ limit: 1000 });
-
-    // Find matching park using improved slug matching
-    const matchingPark = allParks.data.find((park) => {
-      const continentMatch = HierarchicalUrlService.slugMatches(
-        continentSlug,
-        park.continent,
-      );
-      const countryMatch = HierarchicalUrlService.slugMatches(
-        countrySlug,
-        park.country,
-      );
-      const parkMatch = HierarchicalUrlService.slugMatches(parkSlug, park.name);
-      return continentMatch && countryMatch && parkMatch;
-    });
+    // Use optimized database query to find the park
+    const matchingPark = await this.parksService.findParkByHierarchy(
+      continentSlug,
+      countrySlug,
+      parkSlug,
+    );
 
     if (!matchingPark) {
       throw new NotFoundException(
@@ -257,13 +259,11 @@ export class ParksController {
       );
     }
 
-    // Get all rides for this park
-    const parkRides = await this.parksService.findParkRides(matchingPark.id);
-
-    // Find matching ride using improved slug matching
-    const matchingRide = parkRides.rides.find((ride) => {
-      return HierarchicalUrlService.slugMatches(rideSlug, ride.name);
-    });
+    // Use optimized database query to find the ride
+    const matchingRide = await this.parksService.findRideByParkAndName(
+      matchingPark.id,
+      rideSlug,
+    );
 
     if (!matchingRide) {
       throw new NotFoundException(
