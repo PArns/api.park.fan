@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { WeatherService } from './weather.service.js';
 import { DatabaseWeatherCacheService } from './database-weather-cache.service.js';
 import { WeatherDataType } from './weather-cache.entity.js';
+import { ParksService } from './parks.service.js';
 
 @Injectable()
 export class WeatherBackgroundService implements OnModuleInit {
@@ -12,6 +13,7 @@ export class WeatherBackgroundService implements OnModuleInit {
   constructor(
     private readonly weatherService: WeatherService,
     private readonly databaseCacheService: DatabaseWeatherCacheService,
+    private readonly parksService: ParksService,
   ) {}
 
   /**
@@ -42,62 +44,74 @@ export class WeatherBackgroundService implements OnModuleInit {
     const startTime = Date.now();
 
     try {
-      this.logger.log('Starting background weather data update (current + forecasts)...');
+      this.logger.log(
+        'Starting background weather data update (current + forecasts)...',
+      );
 
-      // Get all locations that need weather updates for today
-      const locations = await this.databaseCacheService.getLocationsForUpdate();
+      // Get all park IDs that need weather updates for today
+      const parkIds =
+        await this.databaseCacheService.getParksForWeatherUpdate();
 
-      if (locations.length === 0) {
-        this.logger.log('No locations need weather updates');
+      if (parkIds.length === 0) {
+        this.logger.log('No parks need weather updates');
         return;
       }
 
       this.logger.log(
-        `Updating weather data and forecasts for ${locations.length} locations`,
+        `Updating weather data and forecasts for ${parkIds.length} parks`,
       );
 
       let successCount = 0;
       let failureCount = 0;
 
-      // Process locations in batches to avoid overwhelming the API
-      const batchSize = 3; // Smaller batch size since we're doing both current + forecast
-      for (let i = 0; i < locations.length; i += batchSize) {
-        const batch = locations.slice(i, i + batchSize);
+      // Process parks in batches to avoid overwhelming the API
+      const batchSize = 3;
+      for (let i = 0; i < parkIds.length; i += batchSize) {
+        const batch = parkIds.slice(i, i + batchSize);
 
         // Process batch in parallel but wait for completion before next batch
-        const promises = batch.map(async (location) => {
+        const promises = batch.map(async (parkId) => {
           try {
-            // Only process locations with parkId to avoid duplicate storage
-            if (!location.parkId) {
-              this.logger.debug(
-                `Skipping location without parkId: ${location.latitude},${location.longitude}`,
-              );
+            // Get park details from database to get coordinates
+            const park = await this.databaseCacheService[
+              'weatherDataRepository'
+            ]
+              .query(
+                'SELECT id, latitude, longitude, timezone FROM park WHERE id = $1',
+                [parkId],
+              )
+              .then((rows) => rows[0]);
+
+            if (!park) {
+              this.logger.warn(`Park with ID ${parkId} not found`);
               return;
             }
 
             // Update current weather
             const weatherData = await this.weatherService.getWeatherForLocation(
-              location.latitude,
-              location.longitude,
-              location.timezone,
+              parseFloat(park.latitude),
+              parseFloat(park.longitude),
+              park.timezone,
             );
 
             if (weatherData) {
               // Delete old forecasts for today (they will be replaced by current data)
               const today = new Date();
               const todayString = today.toISOString().split('T')[0];
-              
+
               await this.databaseCacheService['weatherDataRepository']
                 .createQueryBuilder()
                 .delete()
-                .where('parkId = :parkId', { parkId: location.parkId })
-                .andWhere('dataType = :dataType', { dataType: WeatherDataType.FORECAST })
+                .where('parkId = :parkId', { parkId })
+                .andWhere('dataType = :dataType', {
+                  dataType: WeatherDataType.FORECAST,
+                })
                 .andWhere('DATE(weatherDate) = :date', { date: todayString })
                 .execute();
 
               // Store current weather data (only park-specific)
               await this.databaseCacheService.setWeatherForPark(
-                location.parkId,
+                parkId,
                 today,
                 weatherData,
                 WeatherDataType.CURRENT,
@@ -107,31 +121,35 @@ export class WeatherBackgroundService implements OnModuleInit {
 
               // Update forecasts for future days (as far as API supports)
               try {
-                const forecastData = await this.weatherService.fetchWeatherForecast(
-                  location.latitude,
-                  location.longitude,
-                  location.timezone,
-                  7, // Get 7-day forecast
-                );
+                const forecastData =
+                  await this.weatherService.fetchWeatherForecast(
+                    parseFloat(park.latitude),
+                    parseFloat(park.longitude),
+                    park.timezone,
+                    7, // Get 7-day forecast
+                  );
 
                 if (forecastData) {
                   // Remove old forecast entries for future days first
                   const tomorrow = new Date();
                   tomorrow.setDate(tomorrow.getDate() + 1);
-                  
+
                   await this.databaseCacheService['weatherDataRepository']
                     .createQueryBuilder()
                     .delete()
-                    .where('parkId = :parkId', { parkId: location.parkId })
-                    .andWhere('dataType = :dataType', { dataType: WeatherDataType.FORECAST })
+                    .where('parkId = :parkId', { parkId })
+                    .andWhere('dataType = :dataType', {
+                      dataType: WeatherDataType.FORECAST,
+                    })
                     .andWhere('weatherDate >= :tomorrow', { tomorrow })
                     .execute();
 
                   // Store new forecast data for future days
                   for (const forecast of forecastData) {
-                    if (forecast.daysAhead > 0) { // Skip today (day 0), we have current data
+                    if (forecast.daysAhead > 0) {
+                      // Skip today (day 0), we have current data
                       await this.databaseCacheService.setWeatherForPark(
-                        location.parkId,
+                        parkId,
                         forecast.date,
                         forecast.weather,
                         WeatherDataType.FORECAST,
@@ -142,12 +160,12 @@ export class WeatherBackgroundService implements OnModuleInit {
                   }
 
                   this.logger.debug(
-                    `Updated current weather and ${forecastData.length - 1} forecasts for park ${location.parkId}`,
+                    `Updated current weather and ${forecastData.length - 1} forecasts for park ${parkId}`,
                   );
                 }
               } catch (forecastError) {
                 this.logger.warn(
-                  `Failed to update forecasts for park ${location.parkId}:`,
+                  `Failed to update forecasts for park ${parkId}:`,
                   forecastError,
                 );
               }
@@ -156,13 +174,13 @@ export class WeatherBackgroundService implements OnModuleInit {
             } else {
               failureCount++;
               this.logger.warn(
-                `Failed to get weather data for ${location.latitude},${location.longitude}`,
+                `Failed to get weather data for park ${parkId} (${park.latitude},${park.longitude})`,
               );
             }
           } catch (error) {
             failureCount++;
             this.logger.error(
-              `Error updating weather for ${location.latitude},${location.longitude}:`,
+              `Error updating weather for park ${parkId}:`,
               error,
             );
           }
@@ -171,7 +189,7 @@ export class WeatherBackgroundService implements OnModuleInit {
         await Promise.all(promises);
 
         // Delay between batches (longer since we're doing more work)
-        if (i + batchSize < locations.length) {
+        if (i + batchSize < parkIds.length) {
           await new Promise((resolve) => setTimeout(resolve, 2000));
         }
       }
@@ -182,7 +200,8 @@ export class WeatherBackgroundService implements OnModuleInit {
       );
 
       // Convert expired current weather data to historical before cleanup
-      const convertedExpiredCount = await this.convertExpiredCurrentToHistorical();
+      const convertedExpiredCount =
+        await this.convertExpiredCurrentToHistorical();
       if (convertedExpiredCount > 0) {
         this.logger.log(
           `Converted ${convertedExpiredCount} expired current weather entries to historical data`,
@@ -218,26 +237,26 @@ export class WeatherBackgroundService implements OnModuleInit {
     }
 
     const startTime = Date.now();
-    
+
     // Temporarily set as running and trigger update
     this.isRunning = true;
-    
+
     try {
       await this.updateWeatherData();
       const duration = Date.now() - startTime;
-      
+
       // Return some basic stats (could be enhanced to track actual counts)
-      return { 
+      return {
         success: 1, // Indicates successful completion
-        failed: 0, 
-        duration 
+        failed: 0,
+        duration,
       };
     } catch (error) {
       const duration = Date.now() - startTime;
-      return { 
-        success: 0, 
-        failed: 1, 
-        duration 
+      return {
+        success: 0,
+        failed: 1,
+        duration,
       };
     } finally {
       this.isRunning = false;
@@ -249,10 +268,14 @@ export class WeatherBackgroundService implements OnModuleInit {
    */
   private async convertExpiredCurrentToHistorical(): Promise<number> {
     try {
-      this.logger.debug('Converting expired current weather data to historical...');
+      this.logger.debug(
+        'Converting expired current weather data to historical...',
+      );
 
       // Get expired current weather entries that have park IDs (valuable historical data)
-      const expiredEntries = await this.databaseCacheService['weatherDataRepository']
+      const expiredEntries = await this.databaseCacheService[
+        'weatherDataRepository'
+      ]
         .createQueryBuilder('wd')
         .where('wd.dataType = :dataType', { dataType: WeatherDataType.CURRENT })
         .andWhere('wd.validUntil <= :now', { now: new Date() })
@@ -268,11 +291,14 @@ export class WeatherBackgroundService implements OnModuleInit {
           const historicalId = `park_${entry.parkId}_${entry.weatherDate.toISOString().split('T')[0]}_historical`;
 
           // Check if historical entry already exists
-          const existingHistorical = await this.databaseCacheService['weatherDataRepository']
-            .findOne({ where: { id: historicalId } });
+          const existingHistorical = await this.databaseCacheService[
+            'weatherDataRepository'
+          ].findOne({ where: { id: historicalId } });
 
           if (!existingHistorical) {
-            const historicalEntry = this.databaseCacheService['weatherDataRepository'].create({
+            const historicalEntry = this.databaseCacheService[
+              'weatherDataRepository'
+            ].create({
               id: historicalId,
               parkId: entry.parkId,
               weatherDate: entry.weatherDate,
@@ -287,7 +313,9 @@ export class WeatherBackgroundService implements OnModuleInit {
               isFetchFailed: false,
             });
 
-            await this.databaseCacheService['weatherDataRepository'].save(historicalEntry);
+            await this.databaseCacheService['weatherDataRepository'].save(
+              historicalEntry,
+            );
             convertedCount++;
 
             this.logger.debug(
@@ -310,7 +338,10 @@ export class WeatherBackgroundService implements OnModuleInit {
 
       return convertedCount;
     } catch (error) {
-      this.logger.error('Error converting expired current weather to historical:', error);
+      this.logger.error(
+        'Error converting expired current weather to historical:',
+        error,
+      );
       return 0;
     }
   }

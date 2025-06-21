@@ -4,23 +4,40 @@ info:
   description: |
     # 🎢 Park.Fan API - Theme Park Data & Real-Time Wait Times
 
-    The Park.Fan API provides comprehensive theme park data with real-time wait times, intelligent park status detection, and hierarchical navigation. Built with modern web technologies and designed for theme park enthusiasts and developers.
+    The Park.Fan API provides comprehensive theme park data with real-time wait times, intelligent park status detection, crowd level analysis, weather information, and hierarchical navigation. Built with modern web technologies and designed for theme park enthusiasts and developers.
 
     ## 🌟 Key Features
 
     - **Real-time Data**: Live wait times and ride status updates
     - **Intelligent Park Status**: Dynamic "open" vs "closed" detection based on ride availability
+    - **Crowd Level Intelligence**: AI-driven park congestion analysis with historical context
+    - **Live Weather Data**: Current conditions and 7-day forecasts for every park
     - **Hierarchical Navigation**: Access parks by continent, country, and park name
     - **Advanced Filtering**: Filter by status, location, and operational parameters
     - **Type-Safe API**: Proper parameter validation and type conversion
     - **Comprehensive Coverage**: Theme parks worldwide with detailed ride information
 
-    ## 🎯 Smart Park Status Logic
+    ## � Smart Park Status Logic
 
     Parks are dynamically classified as "open" or "closed" based on operational rides:
     - **Threshold-based**: Parks with ≥X% operational rides are "open" (default: 50%)
     - **Configurable**: Override threshold per request with `?openThreshold=X`
     - **Real-time**: Status updates based on current ride operational data
+
+    ## 🌡️ Crowd Level Analysis
+
+    AI-powered crowd level detection provides intelligent park congestion insights:
+    - **Smart Calculation**: Based on top 30% of rides with highest wait times
+    - **Historical Context**: Compares current levels to 2-year rolling average
+    - **Confidence Scoring**: Data quality assessment for reliable predictions
+
+    ## 🌤️ Weather Integration
+
+    Complete weather information for trip planning:
+    - **Current Weather**: Real-time conditions with weather quality scores
+    - **7-Day Forecast**: Complete weather forecasts with daily breakdowns
+    - **Date-Stamped**: Each forecast includes the exact date (YYYY-MM-DD UTC)
+    - **Weather Scores**: AI-powered ratings for theme park visit quality (0-100%)
 
     ## 🗺️ Hierarchical URL Structure
 
@@ -29,7 +46,7 @@ info:
     - Rides: `/parks/europe/germany/phantasialand/taron`
 
     Built with ❤️ for theme park enthusiasts worldwide.
-  version: 1.0.0
+  version: 1.1.0
   contact:
     name: Patrick Arns
     url: https://arns.dev
@@ -37,7 +54,6 @@ info:
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
-  termsOfService: https://api.park.fan/terms
 
 servers:
   - url: https://api.park.fan
@@ -560,8 +576,8 @@ components:
           $ref: '#/components/schemas/CrowdLevel'
           description: Current crowd level calculation (included by default, can be excluded with includeCrowdLevel=false)
         weather:
-          $ref: '#/components/schemas/Weather'
-          description: Current weather conditions for the park location (included by default, can be excluded with includeWeather=false)
+          $ref: '#/components/schemas/WeatherData'
+          description: Complete weather information including current conditions and 7-day forecast (included by default, can be excluded with includeWeather=false)
       required:
         - id
         - name
@@ -990,9 +1006,26 @@ components:
         - confidence
         - calculatedAt
 
+    WeatherData:
+      type: object
+      description: Complete weather information including current conditions and 7-day forecast
+      properties:
+        current:
+          $ref: '#/components/schemas/Weather'
+          nullable: true
+          description: Current weather conditions for today
+        forecast:
+          type: array
+          description: 7-day weather forecast (excluding today)
+          items:
+            $ref: '#/components/schemas/WeatherForecast'
+      required:
+        - current
+        - forecast
+
     Weather:
       type: object
-      description: Current weather conditions for the park location
+      description: Current weather conditions
       properties:
         temperature:
           type: object
@@ -1056,6 +1089,21 @@ components:
         - weatherCode
         - status
         - weatherScore
+
+    WeatherForecast:
+      type: object
+      description: Weather forecast for a specific day
+      allOf:
+        - $ref: '#/components/schemas/Weather'
+        - type: object
+          properties:
+            date:
+              type: string
+              format: date
+              description: Forecast date in YYYY-MM-DD format (UTC)
+              example: "2025-06-22"
+          required:
+            - date
 
     Error:
       type: object

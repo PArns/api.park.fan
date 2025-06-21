@@ -441,7 +441,8 @@ export class WeatherService {
    */
   async getCurrentWeatherForPark(parkId: number): Promise<WeatherData | null> {
     try {
-      const weatherEntity = await this.cacheService.getCurrentWeatherForPark(parkId);
+      const weatherEntity =
+        await this.cacheService.getCurrentWeatherForPark(parkId);
       if (!weatherEntity) {
         return null;
       }
@@ -461,8 +462,11 @@ export class WeatherService {
    */
   async getForecastWeatherForPark(parkId: number): Promise<WeatherData[]> {
     try {
-      const forecastEntities = await this.cacheService.getForecastWeatherForPark(parkId);
-      return forecastEntities.map(entity => this.convertEntityToWeatherData(entity));
+      const forecastEntities =
+        await this.cacheService.getForecastWeatherForPark(parkId);
+      return forecastEntities.map((entity) =>
+        this.convertEntityToWeatherData(entity),
+      );
     } catch (error) {
       this.logger.error(
         `Error retrieving forecast weather for park ${parkId}:`,
@@ -480,11 +484,16 @@ export class WeatherService {
     forecast: WeatherData[];
   }> {
     try {
-      const weatherData = await this.cacheService.getCompleteWeatherForPark(parkId);
-      
+      const weatherData =
+        await this.cacheService.getCompleteWeatherForPark(parkId);
+
       return {
-        current: weatherData.current ? this.convertEntityToWeatherData(weatherData.current) : null,
-        forecast: weatherData.forecast.map(entity => this.convertEntityToWeatherData(entity)),
+        current: weatherData.current
+          ? this.convertEntityToWeatherData(weatherData.current)
+          : null,
+        forecast: weatherData.forecast.map((entity) =>
+          this.convertEntityToWeatherData(entity),
+        ),
       };
     } catch (error) {
       this.logger.error(
@@ -498,21 +507,34 @@ export class WeatherService {
   /**
    * Get weather data for multiple parks in batch
    */
-  async getBatchCompleteWeatherForParks(parkIds: number[]): Promise<Map<number, {
-    current: WeatherData | null;
-    forecast: WeatherData[];
-  }>> {
-    try {
-      const weatherDataMap = await this.cacheService.getBatchCompleteWeatherForParks(parkIds);
-      const results = new Map<number, {
+  async getBatchCompleteWeatherForParks(parkIds: number[]): Promise<
+    Map<
+      number,
+      {
         current: WeatherData | null;
         forecast: WeatherData[];
-      }>();
+      }
+    >
+  > {
+    try {
+      const weatherDataMap =
+        await this.cacheService.getBatchCompleteWeatherForParks(parkIds);
+      const results = new Map<
+        number,
+        {
+          current: WeatherData | null;
+          forecast: WeatherData[];
+        }
+      >();
 
       for (const [parkId, weatherData] of weatherDataMap) {
         results.set(parkId, {
-          current: weatherData.current ? this.convertEntityToWeatherData(weatherData.current) : null,
-          forecast: weatherData.forecast.map(entity => this.convertEntityToWeatherData(entity)),
+          current: weatherData.current
+            ? this.convertEntityToWeatherData(weatherData.current)
+            : null,
+          forecast: weatherData.forecast.map((entity) =>
+            this.convertEntityToWeatherData(entity),
+          ),
         });
       }
 

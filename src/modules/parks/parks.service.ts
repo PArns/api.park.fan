@@ -99,7 +99,9 @@ export class ParksService {
     if (includeWeather) {
       try {
         // Use park-specific weather method that includes current weather and forecast
-        weatherData = await this.weatherService.getCompleteWeatherForPark(park.id);
+        weatherData = await this.weatherService.getCompleteWeatherForPark(
+          park.id,
+        );
       } catch (error) {
         this.logger.debug(
           `Error getting cached weather data for park ${park.id}: ${error.message}`,
@@ -147,7 +149,11 @@ export class ParksService {
     };
 
     // Add weather data only if requested and available
-    if (includeWeather && weatherData && (weatherData.current || weatherData.forecast.length > 0)) {
+    if (
+      includeWeather &&
+      weatherData &&
+      (weatherData.current || weatherData.forecast.length > 0)
+    ) {
       result.weather = {
         current: weatherData.current,
         forecast: weatherData.forecast,
@@ -242,7 +248,11 @@ export class ParksService {
     };
 
     // Add weather data only if requested and available
-    if (includeWeather && weatherData && (weatherData.current || weatherData.forecast.length > 0)) {
+    if (
+      includeWeather &&
+      weatherData &&
+      (weatherData.current || weatherData.forecast.length > 0)
+    ) {
       result.weather = {
         current: weatherData.current,
         forecast: weatherData.forecast,

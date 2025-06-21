@@ -2,22 +2,22 @@
 
 The ultimate REST API for theme park data, ride information, and real-time queue times! 🚀
 
-Built with **NestJS** and **TypeScript** - a high-performance API providing comprehensive access to detailed information about theme parks worldwide, including their attractions and current wait times.
+Built with **NestJS** and **TypeScript** - a high-performance, modern API providing comprehensive access to detailed information about theme parks worldwide, including their attractions and current wait times.
 
 ## ✨ Features - What Makes This API Awesome
 
 - **🏰 Theme Parks**: Complete park information with geographic organization
 - **🎠 Rides & Attractions**: Detailed ride data organized by theme areas
 - **⏱️ Live Wait Times**: Real-time queue times with intelligent status detection
-- **🌤️ Live Weather Data**: Real-time weather information for each park location
+- **🎯 Intelligent Park Status**: Automatic detection of whether parks are "open" or "closed"
 - **🌡️ Crowd Level Intelligence**: AI-driven park congestion analysis with historical context
+- **🌤️ Live Weather Data**: Current conditions and 7-day forecasts for each park location
 - **📊 Advanced Statistics**: Comprehensive analytics with geographical breakdowns and hierarchical URLs
 - **🔍 Smart Search & Filter**: Multi-criteria search across parks, rides, and locations
 - **🌍 Global Coverage**: Parks across multiple continents and countries
 - **📱 RESTful Design**: Clean, intuitive API endpoints with consistent responses
 - **🔄 Automatic Updates**: Scheduled queue time synchronization from external sources
 - **📈 Performance-Optimized**: Built for high throughput with efficient data structures
-- **🎯 Intelligent Park Status**: Automatic detection of whether parks are "open" or "closed"
 - **🏁 Top Lists**: Longest/shortest wait times, busiest/quietest parks with navigation URLs
 - **⚡ Optimized Caching**: API responses include cache headers with 5-minute TTL for improved performance
 - **🗺️ Hierarchical Navigation**: Every park and ride includes navigable hierarchical URLs
@@ -96,7 +96,9 @@ Configure the API using environment variables in your `.env` file:
 | `DB_NAME` | PostgreSQL Database Name | `parkfan` | ✅ |
 | `PARK_OPEN_THRESHOLD_PERCENT` | Park "open" threshold (0-100%) | `50` | ❌ |
 
-### 🎯 Park Operating Status Logic - The Core Feature!
+## 🎯 Core Features
+
+### 🏰 Park Operating Status Logic
 
 The **Park Operating Status** feature intelligently determines whether a park is "open" or "closed":
 
@@ -104,11 +106,6 @@ The **Park Operating Status** feature intelligently determines whether a park is
 - **⚙️ Default**: 50% threshold (configurable via environment variable or API parameter)
 - **⚡ Real-time**: Based on current wait time data and ride operational status
 - **🔧 Flexible**: Override per request with `?openThreshold=X` parameter
-
-**Effects:**
-- 📊 Statistics endpoint park status calculations
-- 🏆 Busiest/quietest park rankings
-- 📈 Geographic operational status breakdowns
 
 **Examples:**
 ```bash
@@ -122,7 +119,7 @@ GET /statistics?openThreshold=75
 GET /parks?openThreshold=25
 ```
 
-### 🌡️ Crowd Level Intelligence - NEW! 🔥
+### 🌡️ Crowd Level Intelligence
 
 The **Crowd Level** feature provides intelligent real-time park congestion analysis:
 
@@ -139,22 +136,6 @@ The **Crowd Level** feature provides intelligent real-time park congestion analy
 - **160-200%**: 🔴 Very High - Very crowded
 - **200%+**: ⚫ Extreme - Exceptionally busy
 
-**Response Data:**
-```json
-{
-  "crowdLevel": {
-    "level": 85,              // Percentage relative to historical average
-    "label": "Moderate",      // Human-readable description
-    "ridesUsed": 6,          // Number of rides used for calculation
-    "totalRides": 20,        // Total rides in park
-    "historicalBaseline": 45, // Historical average (minutes)
-    "currentAverage": 38,     // Current average wait time (minutes)
-    "confidence": 78,         // Data quality score (0-100%)
-    "calculatedAt": "2025-06-18T10:30:00Z"
-  }
-}
-```
-
 **Configuration:**
 ```bash
 # Include crowd level (default)
@@ -162,64 +143,17 @@ GET /parks?includeCrowdLevel=true
 
 # Skip crowd level for faster response
 GET /parks?includeCrowdLevel=false
-
-# Individual park with crowd level
-GET /parks/123?includeCrowdLevel=true
 ```
 
-### 🌤️ Live Weather Data ☀️
+### 🌤️ Live Weather Data
 
-The **Live Weather** feature provides real-time weather information for every park location:
+Provides current weather conditions and 7-day forecasts for each park location:
 
-- **🌡️ Temperature Range**: Daily min/max temperatures during park operating hours (9-22h)
-- **🌧️ Precipitation Probability**: Chance of rain throughout the day
-- **☀️ Weather Status**: Human-readable weather conditions
-- **� Weather Score**: AI-powered weather quality rating (0-100%) for theme park visits
-- **�🌍 Timezone-Aware**: Weather data adjusted to park's local timezone
-- **⚡ Performance-Optimized**: Optional inclusion for faster API responses when not needed
-
-**Weather Status Types:**
-- **☀️ sunny**: Clear, sunny skies
-- **⛅ partly_cloudy**: Some clouds, mostly sunny
-- **☁️ cloudy**: Overcast but no precipitation
-- **🌫️ overcast**: Completely overcast
-- **🌦️ light_rain**: Light rain or drizzle
-- **🌧️ rain**: Moderate rainfall
-- **⛈️ heavy_rain**: Heavy rainfall
-- **⚡ thunderstorm**: Thunderstorms with lightning
-- **❄️ snow**: Snow or freezing conditions
-- **🌫️ fog**: Fog or mist
-- **🌦️ drizzle**: Light drizzle
-
-**🎯 Weather Score Algorithm:**
-The weather score (0-100%) evaluates conditions for theme park visits:
-- **90-100%**: 🟢 Perfect conditions - ideal for visiting!
-- **70-89%**: 🟡 Good conditions - great for outdoor activities
-- **50-69%**: 🟠 Fair conditions - acceptable but not optimal
-- **30-49%**: 🔴 Poor conditions - consider indoor attractions
-- **0-29%**: ⚫ Terrible conditions - might want to postpone visit
-
-**Factors considered:**
-- Weather conditions (sunny weather = higher score)
-- Precipitation probability (lower chance = higher score)
-- Temperature comfort (18-25°C optimal range)
-- Temperature stability (consistent temps preferred)
-
-**Response Data:**
-```json
-{
-  "weather": {
-    "temperature": {
-      "min": 18,              // Minimum temperature (°C)
-      "max": 25               // Maximum temperature (°C)
-    },
-    "precipitationProbability": 20,  // Chance of rain (0-100%)
-    "weatherCode": 1,                // WMO weather code
-    "status": "partly_cloudy",       // Human-readable status
-    "weatherScore": 85               // Weather quality score (0-100%)
-  }
-}
-```
+- **🌡️ Current & Forecast**: Real-time conditions and 7-day weather forecasts
+- **🌧️ Precipitation Data**: Chance of rain and temperature ranges
+- **🎯 Weather Score**: AI-powered weather quality rating (0-100%) for theme park visits
+- **📅 Date-Stamped**: Each forecast includes the exact date (UTC format)
+- **⚡ Performance-Optimized**: Optional inclusion for faster API responses
 
 **Configuration:**
 ```bash
@@ -228,39 +162,9 @@ GET /parks?includeWeather=true
 
 # Skip weather data for faster response
 GET /parks?includeWeather=false
-
-# Individual park with weather
-GET /parks/123?includeWeather=true
 ```
 
-**Data Source:**
-Weather data is sourced from the free **[Open-Meteo API](https://open-meteo.com)**, providing:
-- 🌍 Global coverage for all park locations
-- 🎯 High accuracy meteorological data
-- ⚡ No API key required
-- 🔄 Real-time updates
-- 🌐 WMO (World Meteorological Organization) standard weather codes
-
-## 🚀 Advanced Weather Data System
-
-We've implemented a **revolutionary Weather Data Management System** with historical data collection and AI-ready capabilities:
-
-**Performance**: 100-300ms response time (previously 2-5 seconds)  
-**Data Collection**: Automatic historical weather data for AI model training  
-**Forecasting**: 7-day weather forecasts with daily updates
-
-#### Key Features:
-- **🗄️ Unified Weather Database**: Current, forecast, and historical weather data in one system
-- **🏰 Park-Linked Weather Data**: Weather associated with specific parks for better insights
-- **🔮 7-Day Forecasts**: Complete weather forecasts updated daily at 5:00 AM
-- **📊 AI-Ready Historical Dataset**: Automatic collection of weather data for machine learning
-- **⚡ Server Startup Updates**: Weather data refreshed automatically when server starts
-- **♻️ Smart Data Lifecycle**: Automatic conversion of forecasts to historical data
-- **🎯 Fully Automated System**: No manual intervention required - everything runs via cron jobs
-
-The system automatically builds rich datasets for future AI models including historical weather patterns, forecast accuracy tracking, and weather-attendance correlation data.
-
----
+**Data Source:** Powered by [Open-Meteo API](https://open-meteo.com) with global coverage and WMO standard weather codes.
 
 ## 🎯 API Endpoints - Where the Magic Happens!
 
@@ -485,14 +389,29 @@ GET https://api.park.fan/parks/25
     "openThreshold": 50
   },
   "weather": {
-    "temperature": {
-      "min": 22,
-      "max": 28
+    "current": {
+      "temperature": {
+        "min": 22,
+        "max": 28
+      },
+      "precipitationProbability": 10,
+      "weatherCode": 1,
+      "status": "partly_cloudy",
+      "weatherScore": 92
     },
-    "precipitationProbability": 10,
-    "weatherCode": 1,
-    "status": "partly_cloudy",
-    "weatherScore": 92
+    "forecast": [
+      {
+        "date": "2025-06-22",
+        "temperature": {
+          "min": 20,
+          "max": 30
+        },
+        "precipitationProbability": 5,
+        "weatherCode": 0,
+        "status": "sunny",
+        "weatherScore": 95
+      }
+    ]
   },
   "crowdLevel": {
     "level": 85,
@@ -526,88 +445,64 @@ GET https://api.park.fan/parks/europe/germany/phantasialand
   "name": "Phantasialand",
   "country": "Germany",
   "continent": "Europe",
+  "timezone": "Europe/Berlin",
+  "latitude": 50.7998,
+  "longitude": 6.8783,
+  "isActive": true,
   "hierarchicalUrl": "/parks/europe/germany/phantasialand",
   "operatingStatus": {
-    "isOpen": false,
-    "openRideCount": 0,
-    "totalRideCount": 33,
-    "operatingPercentage": 0
+    "isOpen": true,
+    "openRideCount": 8,
+    "totalRideCount": 12,
+    "operatingPercentage": 66.7,
+    "openThreshold": 50
   },
-  "weather": {
-    "temperature": {
-      "min": 12,
-      "max": 18
-    },
-    "precipitationProbability": 65,
-    "weatherCode": 61,
-    "status": "light_rain",
-    "weatherScore": 25
-  },
-  "themeAreas": [...]
+  "themeAreas": [
+    {
+      "id": 234,
+      "name": "Klugheim",
+      "rides": [
+        {
+          "id": 456,
+          "name": "Taron",
+          "hierarchicalUrl": "/parks/europe/germany/phantasialand/taron",
+          "isActive": true,
+          "waitTime": 45,
+          "lastUpdate": "2025-06-20T15:28:00Z"
+        }
+      ]
+    }
+  ]
 }
 ```
 
-### 🎢 Hierarchical Ride Access
+### 🎢 Ride with Queue Information
 
 ```bash
-GET https://api.park.fan/parks/europe/germany/phantasialand/taron
+GET https://api.park.fan/rides/456
 ```
 
 ```json
 {
-  "id": 1330,
+  "id": 456,
   "name": "Taron",
-  "isActive": true,
   "hierarchicalUrl": "/parks/europe/germany/phantasialand/taron",
   "park": {
     "id": 61,
     "name": "Phantasialand",
-    "country": "Germany",
-    "continent": "Europe",
     "hierarchicalUrl": "/parks/europe/germany/phantasialand"
   },
   "themeArea": {
-    "id": 195,
-    "name": "Mystery"
+    "id": 234,
+    "name": "Klugheim"
   },
-  "currentQueueTime": {
-    "waitTime": 0,
-    "isOpen": false,
-    "lastUpdated": "2025-06-12T17:02:18Z"
-  }
-}
-```
-
-### 🎠 Ride with Current Queue Status
-
-```bash
-GET https://api.park.fan/rides/1847
-```
-
-```json
-{
-  "id": 1847,
-  "name": "Space Mountain",
   "isActive": true,
-  "park": {
-    "id": 25,
-    "name": "Disneyland Park",
-    "country": "United States",
-    "continent": "North America"
-  },
-  "themeArea": {
-    "id": 128,
-    "name": "Tomorrowland"
-  },
-  "currentQueueTime": {
-    "waitTime": 45,
-    "isOpen": true,
-    "lastUpdated": "2023-06-04T18:15:33.000Z"
-  }
+  "waitTime": 45,
+  "lastUpdate": "2025-06-20T15:28:00Z"
 }
 ```
 
-### 📊 Comprehensive Statistics
+### 📊 Statistics Overview
 
 ```bash
 GET https://api.park.fan/statistics
@@ -615,293 +510,136 @@ GET https://api.park.fan/statistics
 
 ```json
 {
-  "totalParks": 145,
-  "totalThemeAreas": 486,
-  "totalRides": 4521,
-  "parkOperatingStatus": {
-    "openParks": 67,
-    "closedParks": 78,
-    "operatingPercentage": 46.2,
+  "global": {
+    "totalParks": 142,
+    "totalRides": 3247,
+    "openParks": 89,
+    "closedParks": 53,
+    "openPercentage": 62.7,
     "openThreshold": 50
   },
-  "rideStatistics": {
-    "totalRides": 2847,
-    "activeRides": 2847,
-    "openRides": 1692,
-    "closedRides": 1155,
-    "operatingPercentage": 59.4,
-    "waitTimeDistribution": {
-      "0-10": 1425,
-      "11-30": 187,
-      "31-60": 58,
-      "61-120": 19,
-      "120+": 3
-    },
-    "longestWaitTimes": [
-      {
-        "rideId": 2407,
-        "rideName": "Guardians of the Galaxy: Mission Breakout!",
-        "parkId": 124,
-        "parkName": "Disney California Adventure",
-        "country": "United States",
-        "continent": "North America",
-        "waitTime": 135,
-        "isOpen": true,
-        "lastUpdated": "2023-06-04T18:20:15.000Z",
-        "hierarchicalUrl": "/parks/north-america/united-states/disney-california-adventure/guardians-of-the-galaxy-mission-breakout",
-        "park": {
-          "id": 124,
-          "name": "Disney California Adventure",
-          "country": "United States",
-          "continent": "North America",
-          "hierarchicalUrl": "/parks/north-america/united-states/disney-california-adventure"
-        }
-      }
-    ],
-    "shortestWaitTimes": [
-      {
-        "rideId": 123,
-        "rideName": "Carousel",
-        "parkId": 30,
-        "parkName": "Phantasialand",
-        "country": "Germany",
-        "continent": "Europe",
-        "waitTime": 5,
-        "isOpen": true,
-        "lastUpdated": "2023-06-04T18:15:33.000Z",
-        "hierarchicalUrl": "/parks/europe/germany/phantasialand/carousel",
-        "park": {
-          "id": 30,
-          "name": "Phantasialand",
-          "country": "Germany",
-          "continent": "Europe",
-          "hierarchicalUrl": "/parks/europe/germany/phantasialand"
-        }
-      }
-    ],
-    "busiestParks": [
-      {
-        "parkId": 115,
-        "parkName": "Epic Universe",
-        "country": "United States",
-        "continent": "North America",
-        "averageWaitTime": 52,
-        "openRideCount": 21,
-        "totalRideCount": 23,
-        "operatingPercentage": 91.3,
-        "hierarchicalUrl": "/parks/north-america/united-states/epic-universe"
-      }
-    ],
-    "quietestParks": [
-      {
-        "parkId": 67,
-        "parkName": "Example Quiet Park",
-        "country": "Germany",
-        "continent": "Europe",
-        "averageWaitTime": 8,
-        "openRideCount": 12,
-        "totalRideCount": 15,
-        "operatingPercentage": 80.0,
-        "hierarchicalUrl": "/parks/europe/germany/example-quiet-park"
-      }
-    ]
-  },
-  "parksByContinent": [
+  "longestWaitTimes": [
     {
-      "continent": "North America",
-      "totalParks": 84,
-      "openParks": 58,
-      "closedParks": 26,
-      "operatingPercentage": 69.0
+      "park": {
+        "id": 25,
+        "name": "Disneyland Park",
+        "hierarchicalUrl": "/parks/north-america/united-states/disneyland-park"
+      },
+      "ride": {
+        "id": 789,
+        "name": "Space Mountain",
+        "hierarchicalUrl": "/parks/north-america/united-states/disneyland-park/space-mountain"
+      },
+      "waitTime": 120,
+      "lastUpdate": "2025-06-20T15:30:00Z"
     }
-  ]
+  ],
+  "shortestWaitTimes": [
+    {
+      "park": {
+        "id": 61,
+        "name": "Phantasialand",
+        "hierarchicalUrl": "/parks/europe/germany/phantasialand"
+      },
+      "ride": {
+        "id": 456,
+        "name": "Taron",
+        "hierarchicalUrl": "/parks/europe/germany/phantasialand/taron"
+      },
+      "waitTime": 5,
+      "lastUpdate": "2025-06-20T15:25:00Z"
+    }
+  ],
+  "busiestParks": [
+    {
+      "id": 25,
+      "name": "Disneyland Park",
+      "hierarchicalUrl": "/parks/north-america/united-states/disneyland-park",
+      "averageWaitTime": 75,
+      "operatingPercentage": 72.4
+    }
+  ],
+  "quietestParks": [
+    {
+      "id": 61,
+      "name": "Phantasialand",
+      "hierarchicalUrl": "/parks/europe/germany/phantasialand",
+      "averageWaitTime": 18,
+      "operatingPercentage": 66.7
+    }
+  ],
+  "byContinent": {
+    "North America": {
+      "totalParks": 45,
+      "openParks": 28,
+      "openPercentage": 62.2
+    },
+    "Europe": {
+      "totalParks": 67,
+      "openParks": 42,
+      "openPercentage": 62.7
+    },
+    "Asia": {
+      "totalParks": 30,
+      "openParks": 19,
+      "openPercentage": 63.3
+    }
+  }
 }
 ```
 
-## 🏗️ Architecture & Technology
-
-### 🛠️ Technology Stack
-
-- **🚀 Framework**: NestJS (Node.js)
-- **💪 Language**: TypeScript
-- **🗄️ Database**: PostgreSQL
-- **🔄 ORM**: TypeORM
-- **📦 Package Manager**: pnpm
-- **✅ Validation**: class-validator & class-transformer
-- **📊 Data Source**: queue-times.com API integration
+## 🛠️ Development & Architecture
 
 ### 📁 Project Structure
 
 ```
 src/
-├── modules/
-│   ├── parks/              # 🏰 Parks, rides, and theme areas
-│   │   ├── parks.controller.ts
-│   │   ├── parks.service.ts
-│   │   ├── park.entity.ts
-│   │   ├── ride.entity.ts
-│   │   ├── theme-area.entity.ts
-│   │   ├── queue-time.entity.ts
-│   │   └── park-group.entity.ts
-│   ├── rides/              # 🎠 Ride-specific endpoints
-│   ├── statistics/         # 📊 Analytics and insights
-│   ├── countries/          # 🌍 Geographic data (countries)
-│   ├── continents/         # 🌎 Geographic data (continents)
-│   ├── queue-times-parser/ # 🔄 Data synchronization
-│   ├── status/             # ⚡ Health checks
-│   ├── database/           # 🗄️ Database configuration
-│   ├── index/              # 🏠 Documentation rendering
-│   └── utils/              # 🛠️ Shared utilities
-├── types/                  # 📝 TypeScript type definitions
-├── app.module.ts           # 🔧 Main application module
-└── main.ts                 # 🚀 Application bootstrap
+├── main.ts                    # Application entry point
+├── app.module.ts             # Root application module
+└── modules/
+    ├── parks/                # Parks module with weather integration
+    ├── rides/                # Rides management
+    ├── statistics/           # Analytics and statistics
+    ├── countries/            # Country data
+    ├── continents/           # Continental data
+    ├── database/             # Database configuration
+    ├── queue-times-parser/   # External data synchronization
+    └── utils/                # Shared utilities and services
 ```
 
-### 🔄 Data Flow
+### 🔧 Technology Stack
 
-1. **📡 External API Integration**: Connects to queue-times.com API and Open-Meteo weather API
-2. **🔄 Automated Synchronization**: Scheduled updates of park and ride data
-3. **🌤️ Real-time Weather**: Live weather data fetched based on park coordinates and timezone
-4. **🗄️ Database Storage**: PostgreSQL with optimized schema
-5. **📊 Real-time Analytics**: Live statistics and operating status
-6. **🎯 RESTful API**: Clean endpoints with intelligent caching
-7. **📱 Response Formatting**: Consistent JSON responses with rich metadata
+- **Backend**: NestJS with TypeScript
+- **Database**: PostgreSQL with TypeORM
+- **Architecture**: Modular, service-oriented design
+- **Caching**: Intelligent park-based weather caching system
+- **External APIs**: Queue-times.com, Open-Meteo weather API
+- **Documentation**: OpenAPI 3.0.3 specification
 
-## 🌤️ Weather Data Examples
+### 🚀 Deployment
 
-### Weather-Optimized Park Selection
+The API is production-ready and designed for horizontal scaling:
 
-```bash
-# Find parks with good weather (example usage for a weather app)
-GET https://api.park.fan/parks?continent=Europe&includeWeather=true&limit=50
+- **Docker**: Containerized deployment support
+- **Environment**: Configurable via environment variables
+- **Database**: Auto-migration and schema synchronization
+- **Performance**: Optimized queries and response caching
+- **Monitoring**: Health check endpoints and system status
 
-# Get all parks with minimal data for weather overview
-GET https://api.park.fan/parks?includeCrowdLevel=false&includeWeather=true
-```
+## 📝 License
 
-### Weather-Aware Trip Planning
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-```bash
-# Check weather at a specific park before visiting
-GET https://api.park.fan/parks/europe/germany/phantasialand?includeWeather=true
+## 🤝 Contributing
 
-# Compare weather across multiple Disney parks
-GET https://api.park.fan/parks?search=Disney&includeWeather=true
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-# Weather data for all US parks
-GET https://api.park.fan/parks/north-america/united-states?includeWeather=true
-```
+## 📞 Support
 
-**Weather Response Example:**
-```json
-{
-  "weather": {
-    "temperature": {
-      "min": 16,
-      "max": 23
-    },
-    "precipitationProbability": 15,
-    "weatherCode": 2,
-    "status": "partly_cloudy",
-    "weatherScore": 78
-  }
-}
-```
-
-Weather conditions evaluation: 🟡 **Good conditions (78/100)** - Great weather for theme park visits! Partly cloudy with comfortable temperatures and low chance of rain.
-
-## 🚀 Performance Optimizations
-
-### 📦 Caching Strategy
-
-The API implements a robust caching strategy to enhance performance and reduce load:
-
-- **⏱️ Cache Headers**: All API responses include Cache-Control headers with a 5-minute (300 seconds) TTL
-- **🔄 Automatic Invalidation**: Cache refreshes after the TTL expires to ensure data freshness
-- **⚡ Improved Response Times**: Enables client-side caching for faster repeat requests
-- **📈 Reduced Server Load**: Minimizes redundant processing for frequently requested endpoints
-- **🌐 CDN Compatibility**: Compatible with CDNs and reverse proxies for edge caching
-
-Example response header:
-```
-Cache-Control: public, max-age=300
-```
-
-This caching implementation is handled through a global NestJS interceptor that applies consistent cache headers across all API endpoints.
-
-## 🔄 Data Updates
-
-The API automatically fetches and updates queue time data through a scheduled service that:
-
-1. **Connects** to queue-times.com API endpoints
-2. **Processes** park and ride data efficiently
-3. **Updates** queue times in real-time
-4. **Maintains** historical data for analytics
-5. **Prevents** duplicate entries with 97%+ efficiency
-
-## 📊 Current Data Stats
-
-- **133 Parks** across 19 countries and 4 continents
-- **422 Theme Areas** with detailed organization
-- **2,683 Rides** with real-time queue data
-- **13,710+ Queue Time Entries** with high data quality
-
-## 🛠️ Development
-
-### Available Scripts
-
-```bash
-# Development
-pnpm run start:dev      # Start with hot reload
-pnpm run start:debug    # Start with debugging
-
-# Building
-pnpm run build          # Build for production
-pnpm run start:prod     # Run production build
-
-# Building
-pnpm run build          # Build for production
-pnpm run start:prod     # Run production build
-```
-
-## 🐳 Docker Support
-
-```bash
-# Build image
-docker build -t park-fan-api .
-
-# Run container
-docker run -p 3000:3000 park-fan-api
-```
-
-## 📋 API Documentation
-
-This API provides comprehensive documentation in multiple formats:
-
-- **📖 Interactive HTML**: Visit the root endpoint `/` for beautifully formatted documentation
-- **📄 Raw Markdown**: Access `/readme` for the source documentation  
-- **📋 OpenAPI Specification**: Download the complete OpenAPI 3.0.3 spec from `/openapi.yaml`
-
-### Using the OpenAPI Specification
-
-Import `https://api.park.fan/openapi.yaml` into your favorite API tools:
-- **[Postman](https://www.postman.com/)**: Import → Link → Paste URL
-- **[Insomnia](https://insomnia.rest/)**: Import/Export → From URL
-- **[Swagger Editor](https://editor.swagger.io/)**: File → Import URL
-- **[OpenAPI Generator](https://openapi-generator.tech/)**: Generate client SDKs in 50+ languages
-
-## 🤝 Acknowledgments
-
-- **[queue-times.com](https://queue-times.com)** for providing comprehensive theme park data and reliable API access
-- **NestJS** team for the excellent framework and documentation
-- **TypeORM** for robust database management and migrations
-
-## 👨‍💻 Developer
-
-Created by **[Patrick Arns https://arns.dev](https://arns.dev)** - Rust developer, passionate about theme parks and modern web technologies.
+For questions or support, please contact:
+- **Email**: info@arns.dev
+- **Website**: [https://arns.dev](https://arns.dev)
 
 ---
 
-*Built with ❤️ for theme park enthusiasts worldwide* 🎡
-
-**Live API: [https://api.park.fan](https://api.park.fan) | Powered by [queue-times.com](https://queue-times.com) data**
+**Built with ❤️ for theme park enthusiasts worldwide** 🎢
