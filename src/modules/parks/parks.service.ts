@@ -159,7 +159,10 @@ export class ParksService {
     if (includeCrowdLevel) {
       try {
         result.crowdLevel =
-          await this.crowdLevelService.calculateCrowdLevelWithTimeout(park, 2000);
+          await this.crowdLevelService.calculateCrowdLevelWithTimeout(
+            park,
+            2000,
+          );
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -257,7 +260,10 @@ export class ParksService {
     if (includeCrowdLevel) {
       try {
         result.crowdLevel =
-          await this.crowdLevelService.calculateCrowdLevelWithTimeout(park, 2000);
+          await this.crowdLevelService.calculateCrowdLevelWithTimeout(
+            park,
+            2000,
+          );
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -627,9 +633,11 @@ export class ParksService {
     // Find the matching ride from theme areas or direct rides
     for (const themeArea of park.themeAreas) {
       for (const ride of themeArea.rides) {
-        if (rideVariations.some((variation) =>
-          variation.toLowerCase() === ride.name.toLowerCase(),
-        )) {
+        if (
+          rideVariations.some(
+            (variation) => variation.toLowerCase() === ride.name.toLowerCase(),
+          )
+        ) {
           return {
             ...this.transformRideWithLatestQueueTime(ride),
             themeArea: {
@@ -642,9 +650,11 @@ export class ParksService {
     }
 
     for (const ride of park.rides) {
-      if (rideVariations.some((variation) =>
-        variation.toLowerCase() === ride.name.toLowerCase(),
-      )) {
+      if (
+        rideVariations.some(
+          (variation) => variation.toLowerCase() === ride.name.toLowerCase(),
+        )
+      ) {
         return {
           ...this.transformRideWithLatestQueueTime(ride),
           themeArea: null,

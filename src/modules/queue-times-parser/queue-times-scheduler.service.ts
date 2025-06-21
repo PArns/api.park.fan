@@ -71,10 +71,12 @@ export class QueueTimesScheduler implements OnModuleInit {
   async fetchQueueTimes() {
     // Wait for initial data fetch to complete before running scheduled updates
     if (!this.initialDataFetchCompleted) {
-      this.logger.log('Skipping scheduled queue times update - initial fetch not completed yet');
+      this.logger.log(
+        'Skipping scheduled queue times update - initial fetch not completed yet',
+      );
       return;
     }
-    
+
     await this.parser.fetchAndStoreQueueTimes();
   }
 }

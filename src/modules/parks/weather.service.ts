@@ -217,20 +217,25 @@ export class WeatherService {
     try {
       // Only check cache, never fetch from API, with timeout to prevent blocking
       const cacheKey = this.cacheService.generateKey(latNum, lngNum, timezone);
-      
+
       // Add timeout to prevent slow cache queries from blocking API responses
       const cachedData = await Promise.race([
         this.cacheService.get(cacheKey),
-        new Promise<null>((resolve) => 
-          setTimeout(() => {
-            this.logger.debug(`Cache query timeout for single location ${latNum},${lngNum}`);
-            resolve(null);
-          }, 1500) // 1.5 seconds timeout for single queries
-        )
+        new Promise<null>(
+          (resolve) =>
+            setTimeout(() => {
+              this.logger.debug(
+                `Cache query timeout for single location ${latNum},${lngNum}`,
+              );
+              resolve(null);
+            }, 1500), // 1.5 seconds timeout for single queries
+        ),
       ]);
 
       if (cachedData) {
-        this.logger.debug(`Using cached weather data for (${latNum}, ${lngNum})`);
+        this.logger.debug(
+          `Using cached weather data for (${latNum}, ${lngNum})`,
+        );
         return cachedData;
       }
 
@@ -239,7 +244,9 @@ export class WeatherService {
       );
       return null;
     } catch (error) {
-      this.logger.debug(`Cache error for ${latNum},${lngNum}: ${error.message}`);
+      this.logger.debug(
+        `Cache error for ${latNum},${lngNum}: ${error.message}`,
+      );
       return null;
     }
   }
@@ -285,16 +292,16 @@ export class WeatherService {
           lngNum,
           location.timezone,
         );
-        
+
         // Add timeout to cache query to prevent blocking
         const cachedData = await Promise.race([
           this.cacheService.get(cacheKey),
-          new Promise<null>((resolve) => 
+          new Promise<null>((resolve) =>
             setTimeout(() => {
               this.logger.debug(`Cache query timeout for ${latNum},${lngNum}`);
               resolve(null);
-            }, CACHE_TIMEOUT_MS)
-          )
+            }, CACHE_TIMEOUT_MS),
+          ),
         ]);
 
         return {
@@ -302,7 +309,9 @@ export class WeatherService {
           weather: cachedData,
         };
       } catch (error) {
-        this.logger.debug(`Cache error for ${latNum},${lngNum}: ${error.message}`);
+        this.logger.debug(
+          `Cache error for ${latNum},${lngNum}: ${error.message}`,
+        );
         return {
           key: `${latNum},${lngNum}`,
           weather: null,
@@ -321,7 +330,9 @@ export class WeatherService {
         `Retrieved cached weather data for ${results.size} locations`,
       );
     } catch (error) {
-      this.logger.warn(`Batch weather cache retrieval failed: ${error.message}`);
+      this.logger.warn(
+        `Batch weather cache retrieval failed: ${error.message}`,
+      );
       // Return empty map on error to avoid blocking
     }
 
@@ -602,42 +613,59 @@ export class WeatherService {
   ): Promise<void> {
     try {
       // Check if we already have cached data
-      const cacheKey = this.cacheService.generateKey(latitude, longitude, timezone);
+      const cacheKey = this.cacheService.generateKey(
+        latitude,
+        longitude,
+        timezone,
+      );
       const existingData = await this.cacheService.get(cacheKey);
-      
+
       if (existingData) {
-        this.logger.debug(`Weather data already cached for ${latitude},${longitude}`);
+        this.logger.debug(
+          `Weather data already cached for ${latitude},${longitude}`,
+        );
         return;
       }
 
       // Trigger background update without blocking the current request
       setImmediate(async () => {
         try {
-          this.logger.debug(`Triggering immediate weather update for ${latitude},${longitude}`);
+          this.logger.debug(
+            `Triggering immediate weather update for ${latitude},${longitude}`,
+          );
           const weatherData = await this.queueRequest(() =>
             this.fetchWeatherFromAPI(latitude, longitude, timezone),
           );
 
           if (weatherData) {
             await this.cacheService.set(cacheKey, weatherData, 12);
-            this.logger.debug(`Successfully cached weather data for ${latitude},${longitude}`);
+            this.logger.debug(
+              `Successfully cached weather data for ${latitude},${longitude}`,
+            );
           } else {
             // Cache failed result to prevent repeated attempts
             await this.cacheService.set(cacheKey, null, 1);
-            this.logger.debug(`Cached failed weather fetch for ${latitude},${longitude}`);
+            this.logger.debug(
+              `Cached failed weather fetch for ${latitude},${longitude}`,
+            );
           }
         } catch (error) {
-          this.logger.warn(`Failed to fetch weather for ${latitude},${longitude}: ${error.message}`);
+          this.logger.warn(
+            `Failed to fetch weather for ${latitude},${longitude}: ${error.message}`,
+          );
           try {
             await this.cacheService.set(cacheKey, null, 0.5); // Cache failure for 30 minutes
           } catch (cacheError) {
-            this.logger.warn(`Failed to cache weather failure: ${cacheError.message}`);
+            this.logger.warn(
+              `Failed to cache weather failure: ${cacheError.message}`,
+            );
           }
         }
       });
-
     } catch (error) {
-      this.logger.warn(`Error in triggerImmediateWeatherUpdate: ${error.message}`);
+      this.logger.warn(
+        `Error in triggerImmediateWeatherUpdate: ${error.message}`,
+      );
     }
   }
 }
