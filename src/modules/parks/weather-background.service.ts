@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { WeatherService } from './weather.service.js';
 import { DatabaseWeatherCacheService } from './database-weather-cache.service.js';
 import { WeatherDataType } from './weather-cache.entity.js';
@@ -24,8 +24,8 @@ export class WeatherBackgroundService implements OnModuleInit {
     );
 
     // Small delay to ensure database is ready
-    setTimeout(() => {
-      this.updateWeatherData();
+    setTimeout(async () => {
+      await this.updateWeatherData();
     }, 5000);
   }
 

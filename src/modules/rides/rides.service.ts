@@ -69,8 +69,8 @@ export class RidesService {
       park: {
         id: ride.park.id,
         name: ride.park.name,
-        continent: ride.park.continent,
-        country: ride.park.country,
+        continent: ride.park.continent || null,
+        country: ride.park.country || null,
       },
       themeArea: ride.themeArea
         ? {

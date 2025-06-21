@@ -153,27 +153,25 @@ export class WeatherService {
     timezone: string,
   ): Promise<WeatherData | null> {
     // Ensure coordinates are numbers and handle string inputs from database
-    const latNum = typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
-    const lngNum = typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
+    const latNum =
+      typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
+    const lngNum =
+      typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
 
     // Validate that we have valid numbers
     if (isNaN(latNum) || isNaN(lngNum)) {
-      this.logger.error(`Invalid coordinates provided: latitude=${latitude}, longitude=${longitude}`);
+      this.logger.error(
+        `Invalid coordinates provided: latitude=${latitude}, longitude=${longitude}`,
+      );
       return null;
     }
 
     // Check cache first
-    const cacheKey = this.cacheService.generateKey(
-      latNum,
-      lngNum,
-      timezone,
-    );
+    const cacheKey = this.cacheService.generateKey(latNum, lngNum, timezone);
     const cachedData = await this.cacheService.get(cacheKey);
 
     if (cachedData) {
-      this.logger.debug(
-        `Using cached weather data for (${latNum}, ${lngNum})`,
-      );
+      this.logger.debug(`Using cached weather data for (${latNum}, ${lngNum})`);
       return cachedData;
     }
 
@@ -412,7 +410,7 @@ export class WeatherService {
   /**
    * Process the request queue to limit concurrent API calls
    */
-  private async processQueue(): Promise<void> {
+  private processQueue(): void {
     if (this.isProcessingQueue || this.requestQueue.length === 0) {
       return;
     }
@@ -426,10 +424,10 @@ export class WeatherService {
       const request = this.requestQueue.shift();
       if (request) {
         this.activeRequests++;
-        request().finally(() => {
+        void request().finally(() => {
           this.activeRequests--;
           // Small delay to prevent overwhelming the API
-          setTimeout(() => this.processQueue(), 100);
+          setTimeout(() => void this.processQueue(), 100);
         });
       }
     }
@@ -447,10 +445,10 @@ export class WeatherService {
           const result = await requestFn();
           resolve(result);
         } catch (error) {
-          reject(error);
+          reject(new Error(error instanceof Error ? error.message : String(error)));
         }
       });
-      this.processQueue();
+      void this.processQueue();
     });
   }
 }

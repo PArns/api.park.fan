@@ -33,12 +33,16 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
     const dateString = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD format
 
     // Ensure coordinates are numbers and handle string inputs from database
-    const latNum = typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
-    const lngNum = typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
+    const latNum =
+      typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
+    const lngNum =
+      typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
 
     // Validate that we have valid numbers
     if (isNaN(latNum) || isNaN(lngNum)) {
-      throw new Error(`Invalid coordinates: latitude=${latitude}, longitude=${longitude}`);
+      throw new Error(
+        `Invalid coordinates: latitude=${latitude}, longitude=${longitude}`,
+      );
     }
 
     return {
@@ -74,12 +78,16 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
     dataType: WeatherDataType,
   ): string {
     // Ensure coordinates are numbers and handle string inputs from database
-    const latNum = typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
-    const lngNum = typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
+    const latNum =
+      typeof latitude === 'number' ? latitude : parseFloat(String(latitude));
+    const lngNum =
+      typeof longitude === 'number' ? longitude : parseFloat(String(longitude));
 
     // Validate that we have valid numbers
     if (isNaN(latNum) || isNaN(lngNum)) {
-      throw new Error(`Invalid coordinates for weather ID: latitude=${latitude}, longitude=${longitude}`);
+      throw new Error(
+        `Invalid coordinates for weather ID: latitude=${latitude}, longitude=${longitude}`,
+      );
     }
 
     // Round coordinates to 4 decimal places to group nearby locations

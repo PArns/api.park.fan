@@ -32,22 +32,39 @@ export class HierarchicalUrlInjectorService {
    * Add hierarchical URL to a single ride object
    * Handles both nested park structure (ride.park) and flat structure (ride.parkName, etc.)
    */
-  addUrlToRide(ride: any): any {
+  addUrlToRide(
+    ride: any,
+    contextPark?: { continent?: string; country?: string; name?: string },
+  ): any {
     if (!ride) return ride;
 
     // Determine park info structure
     let continent, country, parkName;
 
     if (ride.park) {
-      // Nested structure
-      continent = ride.park.continent;
-      country = ride.park.country;
-      parkName = ride.park.name;
+      // Nested structure - use park data or fall back to context
+      continent = ride.park.continent?.trim() || contextPark?.continent || null;
+      country = ride.park.country?.trim() || contextPark?.country || null;
+      parkName = ride.park.name?.trim() || contextPark?.name || null;
+
+      // If park data is missing key fields, log a warning
+      if (!ride.park.continent || !ride.park.country) {
+        console.warn(
+          `Warning: Using context fallback for ride "${ride.name}" - park data incomplete`,
+          {
+            parkId: ride.park.id,
+            dbContinent: ride.park.continent,
+            dbCountry: ride.park.country,
+            contextContinent: contextPark?.continent,
+            contextCountry: contextPark?.country,
+          },
+        );
+      }
     } else {
-      // Flat structure (from statistics)
-      continent = ride.continent;
-      country = ride.country;
-      parkName = ride.parkName;
+      // Flat structure (from statistics) - use direct fields or context
+      continent = ride.continent?.trim() || contextPark?.continent || null;
+      country = ride.country?.trim() || contextPark?.country || null;
+      parkName = ride.parkName?.trim() || contextPark?.name || null;
     }
 
     const rideWithUrl = {
@@ -94,10 +111,13 @@ export class HierarchicalUrlInjectorService {
   /**
    * Add hierarchical URLs to an array of rides
    */
-  addUrlsToRides(rides: any[]): any[] {
+  addUrlsToRides(
+    rides: any[],
+    contextPark?: { continent?: string; country?: string; name?: string },
+  ): any[] {
     if (!rides || !Array.isArray(rides)) return rides;
 
-    return rides.map((ride) => this.addUrlToRide(ride));
+    return rides.map((ride) => this.addUrlToRide(ride, contextPark));
   }
 
   /**
@@ -133,11 +153,18 @@ export class HierarchicalUrlInjectorService {
 
     const parkWithUrl = this.addUrlToPark(park);
 
+    // Create park context for rides
+    const parkContext = {
+      continent: park.continent,
+      country: park.country,
+      name: park.name,
+    };
+
     // Add URLs to theme areas and rides if they exist
     if (park.themeAreas && Array.isArray(park.themeAreas)) {
       parkWithUrl.themeAreas = park.themeAreas.map((themeArea: any) => ({
         ...themeArea,
-        rides: this.addUrlsToRides(themeArea.rides),
+        rides: this.addUrlsToRides(themeArea.rides, parkContext),
       }));
     }
 
@@ -158,5 +185,42 @@ export class HierarchicalUrlInjectorService {
     if (!parks || !Array.isArray(parks)) return parks;
 
     return parks.map((park) => this.addUrlsToParkWithDetails(park));
+  }
+
+  /**
+   * Add hierarchical URLs to a park with theme areas and rides, using URL context as fallback
+   */
+  addUrlToParkWithDetailsAndContext(
+    park: any,
+    urlContext?: { continent?: string; country?: string; name?: string },
+  ): any {
+    if (!park) return park;
+
+    // Use park data or fall back to URL context
+    const effectivePark = {
+      ...park,
+      continent: park.continent || urlContext?.continent || 'unknown',
+      country: park.country || urlContext?.country || 'unknown',
+      name: park.name || urlContext?.name || 'unknown',
+    };
+
+    const parkWithUrl = this.addUrlToPark(effectivePark);
+
+    // Create park context for rides (prefer URL context over potentially missing DB data)
+    const parkContext = {
+      continent: urlContext?.continent || park.continent || 'unknown',
+      country: urlContext?.country || park.country || 'unknown',
+      name: urlContext?.name || park.name || 'unknown',
+    };
+
+    // Add URLs to theme areas and rides if they exist
+    if (park.themeAreas && Array.isArray(park.themeAreas)) {
+      parkWithUrl.themeAreas = park.themeAreas.map((themeArea: any) => ({
+        ...themeArea,
+        rides: this.addUrlsToRides(themeArea.rides, parkContext),
+      }));
+    }
+
+    return parkWithUrl;
   }
 }

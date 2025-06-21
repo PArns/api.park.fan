@@ -205,8 +205,17 @@ export class ParksController {
       includeWeather,
     );
 
-    // Add hierarchical URL to the response using the injector
-    return this.urlInjector.addUrlToParkWithDetails(parkDetails);
+    // Add hierarchical URL to the response using the injector with URL context as fallback
+    const urlContext = {
+      continent: continentSlug.replace(/-/g, ' '),
+      country: countrySlug.replace(/-/g, ' '),
+      name: parkSlug.replace(/-/g, ' '),
+    };
+
+    return this.urlInjector.addUrlToParkWithDetailsAndContext(
+      parkDetails,
+      urlContext,
+    );
   }
 
   /**
@@ -264,7 +273,15 @@ export class ParksController {
 
     // Return detailed ride information with URLs using the injector
     const rideDetails = await this.ridesService.findOne(matchingRide.id);
-    return this.urlInjector.addUrlToRide(rideDetails);
+
+    // Create URL context for the ride
+    const urlContext = {
+      continent: continentSlug.replace(/-/g, ' '),
+      country: countrySlug.replace(/-/g, ' '),
+      name: parkSlug.replace(/-/g, ' '),
+    };
+
+    return this.urlInjector.addUrlToRide(rideDetails, urlContext);
   }
 
   // Specific ID routes
