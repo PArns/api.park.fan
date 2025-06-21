@@ -318,17 +318,7 @@ export class ParksService {
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')
       .leftJoinAndSelect('park.themeAreas', 'themeAreas')
       .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
-      .leftJoinAndSelect('park.rides', 'rides')
-      .leftJoinAndSelect(
-        'themeAreaRides.queueTimes',
-        'themeAreaQueueTimes',
-        'themeAreaQueueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = themeAreaRides.id)',
-      )
-      .leftJoinAndSelect(
-        'rides.queueTimes',
-        'rideQueueTimes',
-        'rideQueueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = rides.id)',
-      );
+      .leftJoinAndSelect('park.rides', 'rides');
 
     // Apply filters
     if (search) {
@@ -387,6 +377,66 @@ export class ParksService {
       }
     }
 
+    // Load queue times efficiently for all parks at once
+    if (parks.length > 0) {
+      // Collect all ride IDs from all parks
+      const allRides = parks.flatMap((park) => [
+        ...park.rides,
+        ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
+      ]);
+
+      if (allRides.length > 0) {
+        const rideIds = allRides.map((ride) => ride.id);
+
+        // Get the most recent queue time for each ride in one efficient query
+        const latestQueueTimes = await this.parkRepository.query(
+          `
+          WITH latest_queue_times AS (
+            SELECT DISTINCT ON (qt."rideId") 
+              qt."rideId",
+              qt.id,
+              qt."waitTime",
+              qt."isOpen",
+              qt."lastUpdated",
+              qt."recordedAt"
+            FROM queue_time qt
+            WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
+            ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+          )
+          SELECT * FROM latest_queue_times
+        `,
+          rideIds,
+        );
+
+        // Create a map for quick lookup
+        const queueTimeMap = new Map();
+        latestQueueTimes.forEach((qt) => {
+          queueTimeMap.set(qt.rideId, [
+            {
+              id: qt.id,
+              waitTime: qt.waitTime,
+              isOpen: qt.isOpen,
+              lastUpdated: qt.lastUpdated,
+              recordedAt: qt.recordedAt,
+            },
+          ]);
+        });
+
+        // Attach the latest queue times to all rides in all parks
+        parks.forEach((park) => {
+          park.rides.forEach((ride) => {
+            ride.queueTimes = queueTimeMap.get(ride.id) || [];
+          });
+
+          park.themeAreas?.forEach((themeArea) => {
+            themeArea.rides?.forEach((ride) => {
+              ride.queueTimes = queueTimeMap.get(ride.id) || [];
+            });
+          });
+        });
+      }
+    }
+
     // Transform the data using helper functions
     const transformedParks = await Promise.all(
       parks.map((park) =>
@@ -427,20 +477,65 @@ export class ParksService {
       .leftJoinAndSelect('park.themeAreas', 'themeAreas')
       .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
       .leftJoinAndSelect('park.rides', 'rides')
-      .leftJoinAndSelect(
-        'themeAreaRides.queueTimes',
-        'themeAreaQueueTimes',
-        'themeAreaQueueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = themeAreaRides.id)',
-      )
-      .leftJoinAndSelect(
-        'rides.queueTimes',
-        'rideQueueTimes',
-        'rideQueueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = rides.id)',
-      )
       .where('park.id = :id', { id })
       .getOne();
     if (!park) {
       throw new NotFoundException(`Park with ID ${id} not found`);
+    }
+
+    // Load only the latest queue time for each ride to avoid memory overflow
+    const allRides = [
+      ...park.rides,
+      ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
+    ];
+
+    if (allRides.length > 0) {
+      const rideIds = allRides.map((ride) => ride.id);
+
+      // Get only the most recent queue time for each ride using efficient query
+      const latestQueueTimes = await this.parkRepository.query(
+        `
+        WITH latest_queue_times AS (
+          SELECT DISTINCT ON (qt."rideId") 
+            qt."rideId",
+            qt.id,
+            qt."waitTime",
+            qt."isOpen",
+            qt."lastUpdated",
+            qt."recordedAt"
+          FROM queue_time qt
+          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
+          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+        )
+        SELECT * FROM latest_queue_times
+      `,
+        rideIds,
+      );
+
+      // Create a map for quick lookup
+      const queueTimeMap = new Map();
+      latestQueueTimes.forEach((qt) => {
+        queueTimeMap.set(qt.rideId, [
+          {
+            id: qt.id,
+            waitTime: qt.waitTime,
+            isOpen: qt.isOpen,
+            lastUpdated: qt.lastUpdated,
+            recordedAt: qt.recordedAt,
+          },
+        ]);
+      });
+
+      // Attach the latest queue times to rides
+      park.rides.forEach((ride) => {
+        ride.queueTimes = queueTimeMap.get(ride.id) || [];
+      });
+
+      park.themeAreas?.forEach((themeArea) => {
+        themeArea.rides?.forEach((ride) => {
+          ride.queueTimes = queueTimeMap.get(ride.id) || [];
+        });
+      });
     }
 
     // For single park, we can still use the optimized method with a single-item map
@@ -509,22 +604,66 @@ export class ParksService {
     parkName: string;
     rides: any[];
   }> {
+    // First load park structure without queue times to avoid memory issues
     const park = await this.parkRepository.findOne({
       where: { id: parkId },
       relations: {
         themeAreas: {
-          rides: {
-            queueTimes: true,
-          },
+          rides: true,
         },
-        rides: {
-          queueTimes: true,
-        },
+        rides: true,
       },
     });
 
     if (!park) {
       throw new NotFoundException(`Park with ID ${parkId} not found`);
+    }
+
+    // Get all ride IDs
+    const allRides = [
+      ...park.rides,
+      ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
+    ];
+
+    if (allRides.length > 0) {
+      const rideIds = allRides.map((ride) => ride.id);
+
+      // Get only the most recent queue time for each ride using efficient query
+      const latestQueueTimes = await this.parkRepository.query(
+        `
+        WITH latest_queue_times AS (
+          SELECT DISTINCT ON (qt."rideId") 
+            qt."rideId",
+            qt."waitTime",
+            qt."isOpen",
+            qt."lastUpdated",
+            qt."recordedAt"
+          FROM queue_time qt
+          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
+          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+        )
+        SELECT * FROM latest_queue_times
+      `,
+        rideIds,
+      );
+
+      // Create a map for quick lookup
+      const queueTimeMap = new Map();
+      latestQueueTimes.forEach((qt) => {
+        queueTimeMap.set(qt.rideId, [
+          {
+            waitTime: qt.waitTime,
+            isOpen: qt.isOpen,
+            lastUpdated: qt.lastUpdated,
+            recordedAt: qt.recordedAt,
+          },
+        ]);
+      });
+
+      // Apply queue times to rides
+      allRides.forEach((ride) => {
+        ride.queueTimes = queueTimeMap.get(ride.id) || [];
+      });
     }
 
     // Get all rides from theme areas
@@ -554,12 +693,12 @@ export class ParksService {
     const allRidesMap = new Map();
     themeAreaRides.forEach((ride) => allRidesMap.set(ride.id, ride));
     directParkRides.forEach((ride) => allRidesMap.set(ride.id, ride));
-    const allRides = Array.from(allRidesMap.values());
+    const combinedRides = Array.from(allRidesMap.values());
 
     return {
       parkId: park.id,
       parkName: park.name,
-      rides: allRides,
+      rides: combinedRides,
     };
   }
 
@@ -577,14 +716,13 @@ export class ParksService {
     const countryVariations = this.generateNameVariations(countrySlug);
     const parkVariations = this.generateNameVariations(parkSlug);
 
+    // First, find the park without loading all queue times to avoid memory issues
     const queryBuilder = this.parkRepository
       .createQueryBuilder('park')
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')
       .leftJoinAndSelect('park.themeAreas', 'themeAreas')
       .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
-      .leftJoinAndSelect('park.rides', 'rides')
-      .leftJoinAndSelect('themeAreaRides.queueTimes', 'themeAreaQueueTimes')
-      .leftJoinAndSelect('rides.queueTimes', 'rideQueueTimes');
+      .leftJoinAndSelect('park.rides', 'rides');
 
     // Add conditions for continent, country, and park name
     queryBuilder.where(
@@ -597,6 +735,66 @@ export class ParksService {
     );
 
     const park = await queryBuilder.getOne();
+
+    if (!park) {
+      return null;
+    }
+
+    // Now load only the latest queue time for each ride to avoid memory overflow
+    const allRides = [
+      ...park.rides,
+      ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
+    ];
+
+    if (allRides.length > 0) {
+      const rideIds = allRides.map((ride) => ride.id);
+
+      // Get only the most recent queue time for each ride using a more efficient query
+      const latestQueueTimes = await this.parkRepository.query(
+        `
+        WITH latest_queue_times AS (
+          SELECT DISTINCT ON (qt."rideId") 
+            qt."rideId",
+            qt.id,
+            qt."waitTime",
+            qt."isOpen",
+            qt."lastUpdated",
+            qt."recordedAt"
+          FROM queue_time qt
+          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
+          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+        )
+        SELECT * FROM latest_queue_times
+      `,
+        rideIds,
+      );
+
+      // Create a map for quick lookup
+      const queueTimeMap = new Map();
+      latestQueueTimes.forEach((qt) => {
+        queueTimeMap.set(qt.rideId, [
+          {
+            id: qt.id,
+            waitTime: qt.waitTime,
+            isOpen: qt.isOpen,
+            lastUpdated: qt.lastUpdated,
+            recordedAt: qt.recordedAt,
+          },
+        ]);
+      });
+
+      // Attach the latest queue times to rides
+      park.rides.forEach((ride) => {
+        ride.queueTimes = queueTimeMap.get(ride.id) || [];
+      });
+
+      park.themeAreas?.forEach((themeArea) => {
+        themeArea.rides?.forEach((ride) => {
+          ride.queueTimes = queueTimeMap.get(ride.id) || [];
+        });
+      });
+    }
+
     return park;
   }
 
@@ -609,14 +807,12 @@ export class ParksService {
   ): Promise<any | null> {
     const rideVariations = this.generateNameVariations(rideSlug);
 
-    // Query rides from both theme areas and direct park rides
+    // First, find the ride without loading all queue times
     const park = await this.parkRepository
       .createQueryBuilder('park')
       .leftJoinAndSelect('park.themeAreas', 'themeAreas')
       .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
       .leftJoinAndSelect('park.rides', 'rides')
-      .leftJoinAndSelect('themeAreaRides.queueTimes', 'themeAreaQueueTimes')
-      .leftJoinAndSelect('rides.queueTimes', 'rideQueueTimes')
       .where('park.id = :parkId', { parkId })
       .andWhere(
         '(LOWER(themeAreaRides.name) IN (:...rideNames) OR LOWER(rides.name) IN (:...rideNames))',
@@ -631,6 +827,9 @@ export class ParksService {
     }
 
     // Find the matching ride from theme areas or direct rides
+    let targetRide = null;
+    let targetThemeArea = null;
+
     for (const themeArea of park.themeAreas) {
       for (const ride of themeArea.rides) {
         if (
@@ -638,31 +837,56 @@ export class ParksService {
             (variation) => variation.toLowerCase() === ride.name.toLowerCase(),
           )
         ) {
-          return {
-            ...this.transformRideWithLatestQueueTime(ride),
-            themeArea: {
-              id: themeArea.id,
-              name: themeArea.name,
-            },
-          };
+          targetRide = ride;
+          targetThemeArea = themeArea;
+          break;
+        }
+      }
+      if (targetRide) break;
+    }
+
+    // Check direct park rides if not found in theme areas
+    if (!targetRide) {
+      for (const ride of park.rides) {
+        if (
+          rideVariations.some(
+            (variation) => variation.toLowerCase() === ride.name.toLowerCase(),
+          )
+        ) {
+          targetRide = ride;
+          break;
         }
       }
     }
 
-    for (const ride of park.rides) {
-      if (
-        rideVariations.some(
-          (variation) => variation.toLowerCase() === ride.name.toLowerCase(),
-        )
-      ) {
-        return {
-          ...this.transformRideWithLatestQueueTime(ride),
-          themeArea: null,
-        };
-      }
+    if (!targetRide) {
+      return null;
     }
 
-    return null;
+    // Load only the latest queue time for this specific ride
+    const latestQueueTime = await this.parkRepository.query(
+      `
+      SELECT qt.id, qt."waitTime", qt."isOpen", qt."lastUpdated", qt."recordedAt"
+      FROM queue_time qt
+      WHERE qt."rideId" = $1
+      ORDER BY qt."lastUpdated" DESC, qt."recordedAt" DESC
+      LIMIT 1
+    `,
+      [targetRide.id],
+    );
+
+    // Attach the latest queue time
+    targetRide.queueTimes = latestQueueTime || [];
+
+    return {
+      ...this.transformRideWithLatestQueueTime(targetRide),
+      themeArea: targetThemeArea
+        ? {
+            id: targetThemeArea.id,
+            name: targetThemeArea.name,
+          }
+        : null,
+    };
   }
 
   /**
