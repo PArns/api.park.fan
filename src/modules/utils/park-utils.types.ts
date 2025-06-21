@@ -30,6 +30,7 @@ export interface Park {
   country: string;
   continent: string;
   themeAreas: ThemeArea[];
+  rides?: Ride[]; // Optional direct park rides (for parks without theme areas)
 }
 
 export interface WaitTimeDistribution {

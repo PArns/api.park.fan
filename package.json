@@ -1,7 +1,7 @@
 {
   "name": "api.park.fan",
   "description": "API for the Park.Fan website",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "build": "nest build",

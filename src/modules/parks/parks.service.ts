@@ -113,14 +113,16 @@ export class ParksService {
     if (themeAreas.length === 0 && park.rides && park.rides.length > 0) {
       // Filter rides that are not already assigned to a theme area
       const unassignedRides = park.rides.filter((ride) => !ride.themeArea);
-      
+
       if (unassignedRides.length > 0) {
-        themeAreas = [{
-          id: null,
-          queueTimesId: null,
-          name: 'Rides', // Generic name for rides without theme area
-          rides: unassignedRides.map((ride) => this.transformRide(ride)),
-        }];
+        themeAreas = [
+          {
+            id: null,
+            queueTimesId: null,
+            name: 'Rides', // Generic name for rides without theme area
+            rides: unassignedRides.map((ride) => this.transformRide(ride)),
+          },
+        ];
       }
     }
 
@@ -348,13 +350,18 @@ export class ParksService {
             queueTimes: true,
           },
         },
+        rides: {
+          queueTimes: true,
+        },
       },
     });
 
     if (!park) {
       throw new NotFoundException(`Park with ID ${parkId} not found`);
-    } // Flatten all rides from all theme areas and transform them
-    const allRides = park.themeAreas.flatMap((themeArea) =>
+    }
+
+    // Get all rides from theme areas
+    const themeAreaRides = park.themeAreas.flatMap((themeArea) =>
       themeArea.rides.map((ride) => ({
         id: ride.id,
         name: ride.name,
@@ -366,6 +373,21 @@ export class ParksService {
         currentQueueTime: this.getCurrentQueueTime(ride),
       })),
     );
+
+    // Get direct park rides (if any)
+    const directParkRides = (park.rides || []).map((ride) => ({
+      id: ride.id,
+      name: ride.name,
+      isActive: ride.isActive,
+      themeArea: null, // Direct park rides don't belong to a theme area
+      currentQueueTime: this.getCurrentQueueTime(ride),
+    }));
+
+    // Combine all rides, avoiding duplicates
+    const allRidesMap = new Map();
+    themeAreaRides.forEach((ride) => allRidesMap.set(ride.id, ride));
+    directParkRides.forEach((ride) => allRidesMap.set(ride.id, ride));
+    const allRides = Array.from(allRidesMap.values());
 
     return {
       parkId: park.id,

@@ -23,6 +23,32 @@ export class ParkUtilsService {
   getDefaultOpenThreshold(): number {
     return this.configService.get<number>('PARK_OPEN_THRESHOLD_PERCENT', 50);
   }
+
+  /**
+   * Helper function to get all rides from a park (both from theme areas and direct park rides)
+   * @param park Park object with themeAreas and rides
+   * @returns Array of all rides
+   */
+  getAllRidesFromPark(park: Park): Ride[] {
+    // Get rides from theme areas
+    const themeAreaRides = park.themeAreas.flatMap(
+      (themeArea) => themeArea.rides,
+    );
+
+    // Get direct park rides (if any)
+    const directParkRides = park.rides || [];
+
+    // Combine both arrays, avoiding duplicates (rides might be in both)
+    const allRidesMap = new Map<number, Ride>();
+
+    // Add theme area rides
+    themeAreaRides.forEach((ride) => allRidesMap.set(ride.id, ride));
+
+    // Add direct park rides (this will overwrite theme area rides if there are duplicates)
+    directParkRides.forEach((ride) => allRidesMap.set(ride.id, ride));
+
+    return Array.from(allRidesMap.values());
+  }
   /**
    * Helper function to extract current queue time from a ride
    * @param ride Ride object with queueTimes array
@@ -46,8 +72,8 @@ export class ParkUtilsService {
   calculateParkOpenStatus(park: Park, openThreshold?: number): boolean {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
 
-    // Get all rides from all theme areas
-    const allRides = park.themeAreas.flatMap((themeArea) => themeArea.rides);
+    // Get all rides from all sources (theme areas + direct park rides)
+    const allRides = this.getAllRidesFromPark(park);
     const totalRideCount = allRides.length;
 
     if (totalRideCount === 0) {
@@ -77,8 +103,8 @@ export class ParkUtilsService {
   ): ParkOperatingStatus {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
 
-    // Get all rides from all theme areas
-    const allRides = park.themeAreas.flatMap((themeArea) => themeArea.rides);
+    // Get all rides from all sources (theme areas + direct park rides)
+    const allRides = this.getAllRidesFromPark(park);
     const totalRideCount = allRides.length;
 
     if (totalRideCount === 0) {
@@ -122,8 +148,8 @@ export class ParkUtilsService {
       '120+': 0,
     };
 
-    // Get all rides from all theme areas
-    const allRides = park.themeAreas.flatMap((themeArea) => themeArea.rides);
+    // Get all rides from all sources (theme areas + direct park rides)
+    const allRides = this.getAllRidesFromPark(park);
 
     // Calculate wait time distribution
     allRides.forEach((ride) => {

@@ -445,7 +445,9 @@ export class WeatherService {
           const result = await requestFn();
           resolve(result);
         } catch (error) {
-          reject(new Error(error instanceof Error ? error.message : String(error)));
+          reject(
+            new Error(error instanceof Error ? error.message : String(error)),
+          );
         }
       });
       void this.processQueue();

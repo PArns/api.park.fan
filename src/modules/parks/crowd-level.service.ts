@@ -116,7 +116,7 @@ export class CrowdLevelService {
    * Get rides with current queue time data
    */
   private getRidesWithCurrentData(park: ParkType): any[] {
-    const allRides = park.themeAreas.flatMap((themeArea) => themeArea.rides);
+    const allRides = this.parkUtils.getAllRidesFromPark(park);
     const ridesWithData = allRides.filter((ride) => {
       // Check if ride has currentQueueTime (transformed data) or queueTimes array (raw data)
       const currentQueueTime =

@@ -191,19 +191,18 @@ export class StatisticsService {
     };
 
     // Get all rides from all parks
-    const allRides = parks.flatMap((park) =>
-      park.themeAreas.flatMap((themeArea: any) =>
-        themeArea.rides.map((ride: any) => ({
-          ...ride,
-          park: {
-            id: park.id,
-            name: park.name,
-            country: park.country,
-            continent: park.continent,
-          },
-        })),
-      ),
-    );
+    const allRides = parks.flatMap((park) => {
+      const parkRides = this.parkUtils.getAllRidesFromPark(park);
+      return parkRides.map((ride: any) => ({
+        ...ride,
+        park: {
+          id: park.id,
+          name: park.name,
+          country: park.country,
+          continent: park.continent,
+        },
+      }));
+    });
 
     totalRides = allRides.length;
 
@@ -281,16 +280,16 @@ export class StatisticsService {
 
       const stats = continentStats.get(continent);
 
-      park.themeAreas.forEach((themeArea: any) => {
-        themeArea.rides.forEach((ride: any) => {
-          stats.total++;
-          if (ride.isActive) stats.active++;
+      // Get all rides from park (theme areas + direct rides)
+      const allRides = this.parkUtils.getAllRidesFromPark(park);
+      allRides.forEach((ride: any) => {
+        stats.total++;
+        if (ride.isActive) stats.active++;
 
-          const currentQueueTime = this.getCurrentQueueTime(ride);
-          if (currentQueueTime && currentQueueTime.isOpen) {
-            stats.open++;
-          }
-        });
+        const currentQueueTime = this.getCurrentQueueTime(ride);
+        if (currentQueueTime && currentQueueTime.isOpen) {
+          stats.open++;
+        }
       });
     });
 
@@ -321,16 +320,16 @@ export class StatisticsService {
 
       const stats = countryStats.get(country);
 
-      park.themeAreas.forEach((themeArea: any) => {
-        themeArea.rides.forEach((ride: any) => {
-          stats.total++;
-          if (ride.isActive) stats.active++;
+      // Get all rides from park (theme areas + direct rides)
+      const allRides = this.parkUtils.getAllRidesFromPark(park);
+      allRides.forEach((ride: any) => {
+        stats.total++;
+        if (ride.isActive) stats.active++;
 
-          const currentQueueTime = this.getCurrentQueueTime(ride);
-          if (currentQueueTime && currentQueueTime.isOpen) {
-            stats.open++;
-          }
-        });
+        const currentQueueTime = this.getCurrentQueueTime(ride);
+        if (currentQueueTime && currentQueueTime.isOpen) {
+          stats.open++;
+        }
       });
     });
 
@@ -406,9 +405,7 @@ export class StatisticsService {
     return parks
       .filter((park) => this.calculateParkOpenStatus(park, threshold)) // Use provided threshold
       .map((park) => {
-        const allRides = park.themeAreas.flatMap(
-          (themeArea: any) => themeArea.rides,
-        );
+        const allRides = this.parkUtils.getAllRidesFromPark(park);
 
         // All open rides (for count and percentage) - match the logic in calculateParkOpenStatus
         const allOpenRides = allRides.filter((ride: any) => {
@@ -473,9 +470,7 @@ export class StatisticsService {
     return parks
       .filter((park) => this.calculateParkOpenStatus(park, threshold)) // Use provided threshold
       .map((park) => {
-        const allRides = park.themeAreas.flatMap(
-          (themeArea: any) => themeArea.rides,
-        );
+        const allRides = this.parkUtils.getAllRidesFromPark(park);
 
         // All open rides (for count and percentage) - match the logic in calculateParkOpenStatus
         const allOpenRides = allRides.filter((ride: any) => {
