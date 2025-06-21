@@ -182,7 +182,7 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
   async set(
     key: WeatherCacheKey,
     data: WeatherData | null,
-    ttlHours: number = 12,
+    ttlHours: number = 4,
   ): Promise<void> {
     const now = new Date();
     const validUntil = new Date(now.getTime() + ttlHours * 60 * 60 * 1000);

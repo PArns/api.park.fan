@@ -30,9 +30,9 @@ export class WeatherBackgroundService implements OnModuleInit {
   }
 
   /**
-   * Run current weather updates every 4 hours during the day
+   * Run current weather updates every 2 hours
    */
-  @Cron('0 6,10,14,18,22 * * *')
+  @Cron('0 */2 * * *')
   async updateWeatherData(): Promise<void> {
     if (this.isRunning) {
       this.logger.warn('Weather update already running, skipping...');
@@ -89,7 +89,7 @@ export class WeatherBackgroundService implements OnModuleInit {
                   weatherData,
                   WeatherDataType.CURRENT,
                   undefined,
-                  12, // 12 hour TTL for current weather
+                  4, // 4 hour TTL for current weather
                 );
               }
             } else {

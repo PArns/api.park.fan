@@ -66,6 +66,8 @@ export class ParksService {
       ...ride,
       currentQueueTime: this.getCurrentQueueTime(ride),
       queueTimes: undefined, // Remove the full queueTimes array from response
+      themeArea: undefined, // Remove theme area reference to avoid circular data
+      park: undefined, // Remove park reference to avoid circular data
     };
   }
 
@@ -76,6 +78,7 @@ export class ParksService {
     return {
       ...themeArea,
       rides: themeArea.rides.map((ride) => this.transformRide(ride)),
+      park: undefined, // Remove park reference to avoid circular data
     };
   }
 
@@ -101,6 +104,26 @@ export class ParksService {
       );
     }
 
+    // Handle parks with and without theme areas
+    let themeAreas = park.themeAreas.map((themeArea) =>
+      this.transformThemeArea(themeArea),
+    );
+
+    // If park has no theme areas but has direct rides, create a virtual theme area
+    if (themeAreas.length === 0 && park.rides && park.rides.length > 0) {
+      // Filter rides that are not already assigned to a theme area
+      const unassignedRides = park.rides.filter((ride) => !ride.themeArea);
+      
+      if (unassignedRides.length > 0) {
+        themeAreas = [{
+          id: null,
+          queueTimesId: null,
+          name: 'Rides', // Generic name for rides without theme area
+          rides: unassignedRides.map((ride) => this.transformRide(ride)),
+        }];
+      }
+    }
+
     // Create result object by copying specific properties to avoid any unwanted data
     const result: any = {
       id: park.id,
@@ -112,9 +135,7 @@ export class ParksService {
       longitude: park.longitude,
       timezone: park.timezone,
       parkGroup: park.parkGroup,
-      themeAreas: park.themeAreas.map((themeArea) =>
-        this.transformThemeArea(themeArea),
-      ),
+      themeAreas: themeAreas,
       operatingStatus: openStatus,
       waitTimeDistribution, // Add wait time distribution to park data
     };
@@ -182,11 +203,17 @@ export class ParksService {
       .createQueryBuilder('park')
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')
       .leftJoinAndSelect('park.themeAreas', 'themeAreas')
-      .leftJoinAndSelect('themeAreas.rides', 'rides')
+      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
+      .leftJoinAndSelect('park.rides', 'rides')
+      .leftJoinAndSelect(
+        'themeAreaRides.queueTimes',
+        'themeAreaQueueTimes',
+        'themeAreaQueueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = themeAreaRides.id)',
+      )
       .leftJoinAndSelect(
         'rides.queueTimes',
-        'queueTimes',
-        'queueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = rides.id)',
+        'rideQueueTimes',
+        'rideQueueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = rides.id)',
       );
 
     // Apply filters
@@ -256,11 +283,17 @@ export class ParksService {
       .createQueryBuilder('park')
       .leftJoinAndSelect('park.parkGroup', 'parkGroup')
       .leftJoinAndSelect('park.themeAreas', 'themeAreas')
-      .leftJoinAndSelect('themeAreas.rides', 'rides')
+      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
+      .leftJoinAndSelect('park.rides', 'rides')
+      .leftJoinAndSelect(
+        'themeAreaRides.queueTimes',
+        'themeAreaQueueTimes',
+        'themeAreaQueueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = themeAreaRides.id)',
+      )
       .leftJoinAndSelect(
         'rides.queueTimes',
-        'queueTimes',
-        'queueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = rides.id)',
+        'rideQueueTimes',
+        'rideQueueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = rides.id)',
       )
       .where('park.id = :id', { id })
       .getOne();
