@@ -82,10 +82,15 @@ export class ParksService {
   /**
    * Helper function to transform rides with current queue times
    */
-  private transformRide(ride: any) {
+  private async transformRide(ride: any) {
+    const currentQueueTime =
+      ride.queueTimes && ride.queueTimes.length > 0
+        ? this.getCurrentQueueTime(ride)
+        : await this.parkUtils.getCurrentQueueTimeFromDb(ride.id);
+
     return {
       ...ride,
-      currentQueueTime: this.getCurrentQueueTime(ride),
+      currentQueueTime,
       queueTimes: undefined, // Remove the full queueTimes array from response
       themeArea: undefined, // Remove theme area reference to avoid circular data
       park: undefined, // Remove park reference to avoid circular data
@@ -95,10 +100,14 @@ export class ParksService {
   /**
    * Helper function to transform theme areas with rides
    */
-  private transformThemeArea(themeArea: any) {
+  private async transformThemeArea(themeArea: any) {
+    const rides = await Promise.all(
+      themeArea.rides.map((ride) => this.transformRide(ride)),
+    );
+
     return {
       ...themeArea,
-      rides: themeArea.rides.map((ride) => this.transformRide(ride)),
+      rides,
       park: undefined, // Remove park reference to avoid circular data
     };
   }
@@ -112,7 +121,10 @@ export class ParksService {
     includeCrowdLevel: boolean = true,
     includeWeather: boolean = true,
   ) {
-    const openStatus = this.calculateParkOpenStatus(park, openThreshold);
+    const openStatus = await this.parkUtils.getDetailedParkOpenStatusFromDb(
+      park.id,
+      openThreshold,
+    );
     const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
 
     // Get cached weather data for park (current + forecast) - never make API calls during request processing
@@ -132,8 +144,8 @@ export class ParksService {
     }
 
     // Handle parks with and without theme areas
-    let themeAreas = park.themeAreas.map((themeArea) =>
-      this.transformThemeArea(themeArea),
+    let themeAreas = await Promise.all(
+      park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea)),
     );
 
     // If park has no theme areas but has direct rides, create a virtual theme area
@@ -147,7 +159,9 @@ export class ParksService {
             id: null,
             queueTimesId: null,
             name: 'Rides', // Generic name for rides without theme area
-            rides: unassignedRides.map((ride) => this.transformRide(ride)),
+            rides: await Promise.all(
+              unassignedRides.map((ride) => this.transformRide(ride)),
+            ),
           },
         ];
       }
@@ -221,7 +235,10 @@ export class ParksService {
     includeCrowdLevel: boolean = true,
     includeWeather: boolean = true,
   ) {
-    const openStatus = this.calculateParkOpenStatus(park, openThreshold);
+    const openStatus = await this.parkUtils.getDetailedParkOpenStatusFromDb(
+      park.id,
+      openThreshold,
+    );
     const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
 
     // Get pre-fetched weather data from map using park ID
@@ -231,8 +248,8 @@ export class ParksService {
     }
 
     // Handle parks with and without theme areas
-    let themeAreas = park.themeAreas.map((themeArea) =>
-      this.transformThemeArea(themeArea),
+    let themeAreas = await Promise.all(
+      park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea)),
     );
 
     // If park has no theme areas but has direct rides, create a virtual theme area
@@ -246,7 +263,9 @@ export class ParksService {
             id: null,
             queueTimesId: null,
             name: 'Rides', // Generic name for rides without theme area
-            rides: unassignedRides.map((ride) => this.transformRide(ride)),
+            rides: await Promise.all(
+              unassignedRides.map((ride) => this.transformRide(ride)),
+            ),
           },
         ];
       }

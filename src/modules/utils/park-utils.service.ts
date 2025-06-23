@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Ride } from '../parks/ride.entity.js';
+import { QueueTime as QueueTimeEntity } from '../parks/queue-time.entity.js';
 import {
   Park,
   Ride,
@@ -14,7 +18,13 @@ import {
  */
 @Injectable()
 export class ParkUtilsService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectRepository(Ride)
+    private readonly rideRepository: Repository<Ride>,
+    @InjectRepository(QueueTimeEntity)
+    private readonly queueTimeRepository: Repository<QueueTimeEntity>,
+  ) {}
 
   /**
    * Get the default park open threshold from configuration
@@ -60,6 +70,28 @@ export class ParkUtilsService {
           waitTime: ride.queueTimes[0].waitTime,
           isOpen: ride.queueTimes[0].isOpen,
           lastUpdated: ride.queueTimes[0].lastUpdated,
+        }
+      : null;
+  }
+
+  /**
+   * Get the latest queue time for a ride directly from the database
+   */
+  async getCurrentQueueTimeFromDb(rideId: number): Promise<QueueTime | null> {
+    const latest = await this.queueTimeRepository
+      .createQueryBuilder('qt')
+      .where('qt."rideId" = :rideId', { rideId })
+      .orderBy('qt."lastUpdated"', 'DESC')
+      .addOrderBy('qt."recordedAt"', 'DESC')
+      .limit(1)
+      .getOne();
+
+    return latest
+      ? {
+          id: latest.id,
+          waitTime: latest.waitTime,
+          isOpen: latest.isOpen,
+          lastUpdated: latest.lastUpdated,
         }
       : null;
   }
@@ -129,6 +161,50 @@ export class ParkUtilsService {
 
     return {
       isOpen,
+      openRideCount,
+      totalRideCount,
+      operatingPercentage,
+    };
+  }
+
+  /**
+   * Optimized version of getDetailedParkOpenStatus using direct SQL queries
+   */
+  async getDetailedParkOpenStatusFromDb(
+    parkId: number,
+    openThreshold?: number,
+  ): Promise<ParkOperatingStatus> {
+    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
+
+    const result = await this.queueTimeRepository.query(
+      `
+      WITH latest AS (
+        SELECT DISTINCT ON (qt."rideId")
+          qt."rideId",
+          qt."isOpen"
+        FROM queue_time qt
+        JOIN ride r ON r.id = qt."rideId"
+        WHERE r."parkId" = $1
+        ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+      )
+      SELECT
+        COUNT(*) AS "totalRideCount",
+        COUNT(*) FILTER (WHERE latest."isOpen" = true) AS "openRideCount"
+      FROM latest
+    `,
+      [parkId],
+    );
+
+    const row = result[0] || { totalRideCount: '0', openRideCount: '0' };
+    const totalRideCount = parseInt(row.totalRideCount, 10);
+    const openRideCount = parseInt(row.openRideCount, 10);
+    const operatingPercentage =
+      totalRideCount > 0
+        ? Math.round((openRideCount / totalRideCount) * 100)
+        : 0;
+
+    return {
+      isOpen: operatingPercentage >= threshold,
       openRideCount,
       totalRideCount,
       operatingPercentage,
