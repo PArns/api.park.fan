@@ -13,7 +13,8 @@ export class CacheControlInterceptor implements NestInterceptor {
   constructor(private readonly configService: ConfigService) {}
 
   private get TTL_SECONDS(): number {
-    return this.configService.get<number>('CACHE_TTL_SECONDS', 3600);
+    const seconds = this.configService.get<number>('CACHE_TTL_SECONDS', 3600);
+    return Math.min(seconds, 300);
   }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {

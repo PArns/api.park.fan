@@ -101,12 +101,10 @@ export class ParksController {
       throw new NotFoundException(`Continent not found: ${continentSlug}`);
     }
 
-    // Get parks for this continent
-    const parks = await this.parksService.findAll({
-      ...query,
-      continent: continent,
-      limit: query.limit || 50,
-    });
+    const parks = await this.parksService.findParksByContinentSlug(
+      continentSlug,
+      query,
+    );
 
     // Add hierarchical URLs to each park using the injector
     const parksWithUrls = {
@@ -126,29 +124,10 @@ export class ParksController {
     @Param('country') countrySlug: string,
     @Query() query: ParkQueryDto,
   ): Promise<any> {
-    const continentVariations = HierarchicalUrlService.fromSlug(continentSlug);
-    const countryVariations = HierarchicalUrlService.fromSlug(countrySlug);
-
-    // Find continent and country matches
-    const continent = await this.findMatchingContinent(continentVariations);
-    const country = await this.findMatchingCountry(
-      countryVariations,
-      continent,
+    const parks = await this.parksService.findParksByCountrySlug(
+      countrySlug,
+      query,
     );
-
-    if (!continent || !country) {
-      throw new NotFoundException(
-        `Location not found: ${continentSlug}/${countrySlug}`,
-      );
-    }
-
-    // Get parks for this country
-    const parks = await this.parksService.findAll({
-      ...query,
-      continent: continent,
-      country: country,
-      limit: query.limit || 50,
-    });
 
     // Add hierarchical URLs to each park using the injector
     const parksWithUrls = {
@@ -169,16 +148,14 @@ export class ParksController {
     @Param('park') parkSlug: string,
     @Query() query: ParkQueryDto,
   ): Promise<any> {
-    // Use optimized database query instead of loading all parks
-    const matchingPark = await this.parksService.findParkByHierarchy(
-      continentSlug,
+    const matchingPark = await this.parksService.findParkByCountryAndName(
       countrySlug,
       parkSlug,
     );
 
     if (!matchingPark) {
       throw new NotFoundException(
-        `Park not found for path: ${continentSlug}/${countrySlug}/${parkSlug}`,
+        `Park not found for path: ${countrySlug}/${parkSlug}`,
       );
     }
 
@@ -241,16 +218,14 @@ export class ParksController {
     @Param('park') parkSlug: string,
     @Param('ride') rideSlug: string,
   ): Promise<any> {
-    // Use optimized database query to find the park
-    const matchingPark = await this.parksService.findParkByHierarchy(
-      continentSlug,
+    const matchingPark = await this.parksService.findParkByCountryAndName(
       countrySlug,
       parkSlug,
     );
 
     if (!matchingPark) {
       throw new NotFoundException(
-        `Park not found for path: ${continentSlug}/${countrySlug}/${parkSlug}`,
+        `Park not found for path: ${countrySlug}/${parkSlug}`,
       );
     }
 
@@ -262,7 +237,7 @@ export class ParksController {
 
     if (!matchingRide) {
       throw new NotFoundException(
-        `Ride not found for path: ${continentSlug}/${countrySlug}/${parkSlug}/${rideSlug}`,
+        `Ride not found for path: ${countrySlug}/${parkSlug}/${rideSlug}`,
       );
     }
 
