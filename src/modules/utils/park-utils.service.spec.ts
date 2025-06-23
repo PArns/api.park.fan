@@ -1,6 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { ConfigModule } from '@nestjs/config';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { ParkUtilsService } from './park-utils.service';
+import { Ride } from '../parks/ride.entity';
+import { QueueTime } from '../parks/queue-time.entity';
 
 describe('ParkUtilsService', () => {
   let service: ParkUtilsService;
@@ -8,7 +11,14 @@ describe('ParkUtilsService', () => {
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true })],
-      providers: [ParkUtilsService],
+      providers: [
+        ParkUtilsService,
+        { provide: getRepositoryToken(Ride), useValue: {} },
+        {
+          provide: getRepositoryToken(QueueTime),
+          useValue: { query: jest.fn() },
+        },
+      ],
     }).compile();
 
     service = moduleRef.get(ParkUtilsService);

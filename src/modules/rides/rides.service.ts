@@ -98,21 +98,21 @@ export class RidesService {
    * Get a specific ride by ID with current queue time only
    */
   async findOne(id: number) {
-    const ride = await this.rideRepository
-      .createQueryBuilder('ride')
-      .leftJoinAndSelect('ride.park', 'park')
-      .leftJoinAndSelect('ride.themeArea', 'themeArea')
-      .leftJoinAndSelect('ride.queueTimes', 'queueTimes')
-      .where('ride.id = :id', { id })
-      .orderBy('queueTimes.recordedAt', 'DESC')
-      .getOne();
+    const ride = await this.rideRepository.findOne({
+      where: { id },
+      relations: {
+        park: true,
+        themeArea: true,
+      },
+    });
 
     if (!ride) {
       throw new NotFoundException(`Ride with ID ${id} not found`);
     }
 
-    // Get the most recent queue time for this ride
-    const currentQueueTime = this.getCurrentQueueTime(ride);
+    const currentQueueTime = await this.parkUtils.getCurrentQueueTimeFromDb(
+      ride.id,
+    );
 
     return {
       id: ride.id,

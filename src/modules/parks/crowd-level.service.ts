@@ -200,25 +200,31 @@ export class CrowdLevelService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.HISTORICAL_WINDOW_DAYS);
 
-    const historicalData = await this.queueTimeRepository
-      .createQueryBuilder('qt')
-      .select('AVG(qt.waitTime)', 'avgWaitTime')
-      .addSelect("DATE_TRUNC('hour', qt.lastUpdated)", 'timeSlot')
-      .where('qt.rideId IN (:...rideIds)', { rideIds })
-      .andWhere('qt.lastUpdated >= :cutoffDate', { cutoffDate })
-      .andWhere('qt.isOpen = true')
-      .andWhere('qt.waitTime > 0')
-      .groupBy("DATE_TRUNC('hour', qt.lastUpdated)")
-      .orderBy('AVG(qt.waitTime)', 'ASC')
-      .getRawMany();
+    const result = await this.queueTimeRepository.query(
+      `
+      WITH hourly AS (
+        SELECT DATE_TRUNC('hour', qt."lastUpdated") AS hour_slot,
+               AVG(qt."waitTime") AS avg_wait
+        FROM queue_time qt
+        WHERE qt."rideId" = ANY($1)
+          AND qt."lastUpdated" >= $2
+          AND qt."isOpen" = true
+          AND qt."waitTime" > 0
+        GROUP BY hour_slot
+      )
+      SELECT COUNT(*) AS count,
+             PERCENTILE_CONT($3) WITHIN GROUP (ORDER BY avg_wait) AS percentile
+      FROM hourly
+      `,
+      [rideIds, cutoffDate.toISOString(), this.PERCENTILE],
+    );
 
-    if (historicalData.length < this.MIN_DATA_POINTS) {
+    const row = result[0];
+    if (!row || parseInt(row.count, 10) < this.MIN_DATA_POINTS) {
       return 0;
     }
 
-    // Calculate 95th percentile
-    const percentileIndex = Math.floor(historicalData.length * this.PERCENTILE);
-    return parseFloat(historicalData[percentileIndex]?.avgWaitTime || '0');
+    return parseFloat(row.percentile);
   }
 
   /**
@@ -230,25 +236,27 @@ export class CrowdLevelService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.HISTORICAL_WINDOW_DAYS);
 
-    // Get the date range of available data
-    const dataRange = await this.queueTimeRepository
-      .createQueryBuilder('qt')
-      .select('MIN(qt.lastUpdated)', 'firstDate')
-      .addSelect('MAX(qt.lastUpdated)', 'lastDate')
-      .addSelect('COUNT(*)', 'totalCount')
-      .where('qt.rideId IN (:...rideIds)', { rideIds })
-      .andWhere('qt.lastUpdated >= :cutoffDate', { cutoffDate })
-      .andWhere('qt.isOpen = true')
-      .andWhere('qt.waitTime > 0')
-      .getRawOne();
+    const dataRange = await this.queueTimeRepository.query(
+      `
+      SELECT MIN(qt."lastUpdated") AS "firstDate",
+             MAX(qt."lastUpdated") AS "lastDate",
+             COUNT(*) AS "totalCount"
+      FROM queue_time qt
+      WHERE qt."rideId" = ANY($1)
+        AND qt."lastUpdated" >= $2
+        AND qt."isOpen" = true
+        AND qt."waitTime" > 0
+      `,
+      [rideIds, cutoffDate.toISOString()],
+    );
 
-    if (!dataRange || !dataRange.firstDate || dataRange.totalCount === 0) {
+    const rangeRow = dataRange[0];
+
+    if (!rangeRow || !rangeRow.firstDate || rangeRow.totalCount === '0') {
       return 10; // Minimum confidence when no data
     }
-
-    // Calculate how many days of data we have vs the full historical window
-    const firstDataDate = new Date(dataRange.firstDate);
-    const lastDataDate = new Date(dataRange.lastDate);
+    const firstDataDate = new Date(rangeRow.firstDate);
+    const lastDataDate = new Date(rangeRow.lastDate);
     const today = new Date();
 
     // Calculate actual data coverage (days between first and last data point)
@@ -264,7 +272,7 @@ export class CrowdLevelService {
     );
 
     // Also consider data density (minimum data points per day)
-    const totalCount = parseInt(dataRange.totalCount);
+    const totalCount = parseInt(rangeRow.totalCount, 10);
     const expectedDataPointsPerDay = 24; // Assuming hourly data
     const expectedTotalPoints =
       this.HISTORICAL_WINDOW_DAYS * expectedDataPointsPerDay * rideIds.length;

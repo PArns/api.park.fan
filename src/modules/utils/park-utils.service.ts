@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Ride as RideEntity } from '../parks/ride.entity';
+import { QueueTime as QueueTimeEntity } from '../parks/queue-time.entity';
 import {
   Park,
-  Ride,
+  Ride as RideType,
   WaitTimeDistribution,
   ParkOperatingStatus,
   QueueTime,
@@ -14,7 +18,13 @@ import {
  */
 @Injectable()
 export class ParkUtilsService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectRepository(RideEntity)
+    private readonly rideRepository: Repository<RideEntity>,
+    @InjectRepository(QueueTimeEntity)
+    private readonly queueTimeRepository: Repository<QueueTimeEntity>,
+  ) {}
 
   /**
    * Get the default park open threshold from configuration
@@ -29,7 +39,7 @@ export class ParkUtilsService {
    * @param park Park object with themeAreas and rides
    * @returns Array of all rides
    */
-  getAllRidesFromPark(park: Park): Ride[] {
+  getAllRidesFromPark(park: Park): RideType[] {
     // Get rides from theme areas
     const themeAreaRides = park.themeAreas.flatMap(
       (themeArea) => themeArea.rides,
@@ -39,13 +49,13 @@ export class ParkUtilsService {
     const directParkRides = park.rides || [];
 
     // Combine both arrays, avoiding duplicates (rides might be in both)
-    const allRidesMap = new Map<number, Ride>();
+    const allRidesMap = new Map<number, RideType>();
 
     // Add theme area rides
-    themeAreaRides.forEach((ride) => allRidesMap.set(ride.id, ride));
+    themeAreaRides.forEach((ride: RideType) => allRidesMap.set(ride.id, ride));
 
     // Add direct park rides (this will overwrite theme area rides if there are duplicates)
-    directParkRides.forEach((ride) => allRidesMap.set(ride.id, ride));
+    directParkRides.forEach((ride: RideType) => allRidesMap.set(ride.id, ride));
 
     return Array.from(allRidesMap.values());
   }
@@ -54,12 +64,34 @@ export class ParkUtilsService {
    * @param ride Ride object with queueTimes array
    * @returns Current queue time information or null if not available
    */
-  getCurrentQueueTime(ride: Ride): QueueTime | null {
+  getCurrentQueueTime(ride: RideType): QueueTime | null {
     return ride.queueTimes && ride.queueTimes.length > 0
       ? {
           waitTime: ride.queueTimes[0].waitTime,
           isOpen: ride.queueTimes[0].isOpen,
           lastUpdated: ride.queueTimes[0].lastUpdated,
+        }
+      : null;
+  }
+
+  /**
+   * Get the latest queue time for a ride directly from the database
+   */
+  async getCurrentQueueTimeFromDb(rideId: number): Promise<QueueTime | null> {
+    const latest = await this.queueTimeRepository
+      .createQueryBuilder('qt')
+      .where('qt."rideId" = :rideId', { rideId })
+      .orderBy('qt."lastUpdated"', 'DESC')
+      .addOrderBy('qt."recordedAt"', 'DESC')
+      .limit(1)
+      .getOne();
+
+    return latest
+      ? {
+          id: latest.id,
+          waitTime: latest.waitTime,
+          isOpen: latest.isOpen,
+          lastUpdated: latest.lastUpdated,
         }
       : null;
   }
@@ -129,6 +161,53 @@ export class ParkUtilsService {
 
     return {
       isOpen,
+      openRideCount,
+      totalRideCount,
+      operatingPercentage,
+    };
+  }
+
+  /**
+   * Optimized version of getDetailedParkOpenStatus using direct SQL queries
+   */
+  async getDetailedParkOpenStatusFromDb(
+    parkId: number,
+    openThreshold?: number,
+  ): Promise<ParkOperatingStatus> {
+    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
+
+    const latestSubQuery = this.queueTimeRepository
+      .createQueryBuilder('qt')
+      .distinctOn(['qt."rideId"'])
+      .select('qt."rideId"', 'rideId')
+      .addSelect('qt."isOpen"', 'isOpen')
+      .innerJoin(RideEntity, 'r', 'r.id = qt."rideId"')
+      .where('r."parkId" = :parkId', { parkId })
+      .orderBy('qt."rideId"')
+      .addOrderBy('qt."lastUpdated"', 'DESC')
+      .addOrderBy('qt."recordedAt"', 'DESC');
+
+    const row = await this.queueTimeRepository
+      .createQueryBuilder()
+      .select('COUNT(*)', 'totalRideCount')
+      .addSelect(
+        'COUNT(*) FILTER (WHERE latest."isOpen" = true)',
+        'openRideCount',
+      )
+      .from('(' + latestSubQuery.getQuery() + ')', 'latest')
+      .setParameters(latestSubQuery.getParameters())
+      .getRawOne();
+
+    const resultRow = row || { totalRideCount: '0', openRideCount: '0' };
+    const totalRideCount = parseInt(resultRow.totalRideCount, 10);
+    const openRideCount = parseInt(resultRow.openRideCount, 10);
+    const operatingPercentage =
+      totalRideCount > 0
+        ? Math.round((openRideCount / totalRideCount) * 100)
+        : 0;
+
+    return {
+      isOpen: operatingPercentage >= threshold,
       openRideCount,
       totalRideCount,
       operatingPercentage,
