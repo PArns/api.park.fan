@@ -20,7 +20,8 @@ export class HierarchicalUrlService {
       .replace(/\-\-+/g, '-') // Replace multiple hyphens with single hyphen
       .replace(/^-+/, '') // Remove leading hyphens
       .replace(/-+$/, ''); // Remove trailing hyphens
-  } /**
+  }
+  /**
    * Generate hierarchical URL for a park
    */
   static generateParkUrl(
