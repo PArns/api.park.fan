@@ -445,8 +445,15 @@ export class ParksService {
     const limitParam = paramIndex;
     const offsetParam = paramIndex + 1;
 
-    // Single optimized query to get parks with all related data - queue times loaded separately
+    // Single optimized query with proper pagination - first get the parks, then join all data
     const parksQuery = `
+      WITH paginated_parks AS (
+        SELECT p.id
+        FROM park p
+        ${whereClause}
+        ORDER BY p.name ASC
+        LIMIT $${limitParam} OFFSET $${offsetParam}
+      )
       SELECT 
         p.id as park_id,
         p."queueTimesId" as park_queue_times_id,
@@ -468,13 +475,12 @@ export class ParksService {
         r."isActive" as ride_is_active,
         r."themeAreaId" as ride_theme_area_id,
         r."parkId" as ride_park_id
-      FROM park p
+      FROM paginated_parks pp
+      JOIN park p ON p.id = pp.id
       LEFT JOIN park_group pg ON p."parkGroupId" = pg.id
       LEFT JOIN theme_area ta ON ta."parkId" = p.id
       LEFT JOIN ride r ON (r."themeAreaId" = ta.id OR r."parkId" = p.id)
-      ${whereClause}
       ORDER BY p.name ASC, ta.name ASC, r.name ASC
-      LIMIT $${limitParam} OFFSET $${offsetParam}
     `;
 
     const rawResults = await this.parkRepository.query(parksQuery, queryParams);
