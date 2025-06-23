@@ -150,7 +150,8 @@ paths:
           description: Filter parks by continent
           required: false
           schema:
-            type: string        - name: country
+            type: string
+        - name: country
           in: query
           description: Filter parks by country
           required: false
@@ -210,7 +211,8 @@ paths:
             oneOf:
               - type: integer
                 description: Numeric park ID
-              - type: string                description: Continent name for hierarchical navigation
+              - type: string
+                description: Continent name for hierarchical navigation
         - name: openThreshold
           in: query
           description: Percentage threshold for considering a park "open"
@@ -567,7 +569,8 @@ components:
         isOpen:
           type: boolean
           description: Whether the park is currently considered "open" based on ride availability
-          example: true        rides:
+          example: true
+        rides:
           type: array
           description: List of rides in the park (included when fetching specific park)
           items:
