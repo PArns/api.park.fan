@@ -13,7 +13,8 @@ import { QueueTime } from './queue-time.entity';
 
 @Entity()
 @Unique(['queueTimesId', 'park']) // Unique constraint on queueTimesId + park combination
-@Index('IDX_RIDE_NAME')
+// Index on ride name for fast lookup
+@Index('IDX_RIDE_NAME', ['name'])
 @Index('IDX_RIDE_PARK_NAME', ['park', 'name'])
 export class Ride {
   @PrimaryGeneratedColumn()

@@ -104,6 +104,24 @@ paths:
               schema:
                 type: string
 
+  /status:
+    get:
+      summary: API Status
+      description: Simple health check endpoint returning `{"status":"OK"}`.
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Service is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: OK
+
   /parks:
     get:
       summary: Get All Parks
