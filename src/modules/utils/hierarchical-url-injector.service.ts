@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { HierarchicalUrlService } from './hierarchical-url.service.js';
+import { HierarchicalUrlService } from './hierarchical-url.service';
 
 @Injectable()
 export class HierarchicalUrlInjectorService {

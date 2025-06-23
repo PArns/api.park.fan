@@ -403,8 +403,10 @@ export class StatisticsService {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
 
     return parks
-      .filter((park) => this.calculateParkOpenStatus(park, threshold)) // Use provided threshold
       .map((park) => {
+        if (!this.calculateParkOpenStatus(park, threshold)) {
+          return null;
+        }
         const allRides = this.parkUtils.getAllRidesFromPark(park);
 
         // All open rides (for count and percentage) - match the logic in calculateParkOpenStatus
@@ -468,8 +470,10 @@ export class StatisticsService {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
 
     return parks
-      .filter((park) => this.calculateParkOpenStatus(park, threshold)) // Use provided threshold
       .map((park) => {
+        if (!this.calculateParkOpenStatus(park, threshold)) {
+          return null;
+        }
         const allRides = this.parkUtils.getAllRidesFromPark(park);
 
         // All open rides (for count and percentage) - match the logic in calculateParkOpenStatus
