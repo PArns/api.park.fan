@@ -10,7 +10,7 @@ export class StatusController {
   ) {}
 
   @Get()
-  getStatus(): { status: string } {
+  getStatus(): { status: string; version: string; timestamp: string } {
     return this.statusService.getStatus();
   }
 
