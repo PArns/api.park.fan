@@ -288,7 +288,8 @@ export class WeatherBackgroundService implements OnModuleInit {
       for (const entry of expiredEntries) {
         try {
           // Create historical entry
-          const historicalId = `park_${entry.parkId}_${entry.weatherDate.toISOString().split('T')[0]}_historical`;
+          const weatherDateObj = entry.weatherDate instanceof Date ? entry.weatherDate : new Date(entry.weatherDate);
+          const historicalId = `park_${entry.parkId}_${weatherDateObj.toISOString().split('T')[0]}_historical`;
 
           // Check if historical entry already exists
           const existingHistorical = await this.databaseCacheService[
@@ -301,7 +302,7 @@ export class WeatherBackgroundService implements OnModuleInit {
             ].create({
               id: historicalId,
               parkId: entry.parkId,
-              weatherDate: entry.weatherDate,
+              weatherDate: weatherDateObj,
               dataType: WeatherDataType.HISTORICAL,
               temperatureMin: entry.temperatureMin,
               temperatureMax: entry.temperatureMax,
@@ -319,7 +320,7 @@ export class WeatherBackgroundService implements OnModuleInit {
             convertedCount++;
 
             this.logger.debug(
-              `Converted expired current weather for park ${entry.parkId} on ${entry.weatherDate.toISOString().split('T')[0]} to historical`,
+              `Converted expired current weather for park ${entry.parkId} on ${weatherDateObj.toISOString().split('T')[0]} to historical`,
             );
           }
         } catch (error) {
