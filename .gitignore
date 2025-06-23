@@ -35,7 +35,6 @@ coverage
 test
 __tests__
 *.test.ts
-*.spec.ts
 
 # OS
 .DS_Store

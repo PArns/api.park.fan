@@ -8,8 +8,8 @@ import {
   JoinColumn,
   Index,
 } from 'typeorm';
-import { WeatherStatus } from './weather.dto.js';
-import { Park } from './park.entity.js';
+import { WeatherStatus } from './weather.dto';
+import { Park } from './park.entity';
 
 export enum WeatherDataType {
   CURRENT = 'current',

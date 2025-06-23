@@ -13,6 +13,8 @@ import { ParksService } from './parks.service.js';
 import { WeatherService } from './weather.service.js';
 import { ParkQueryDto } from './parks.dto.js';
 import { RidesService } from '../rides/rides.service.js';
+import { ContinentsService } from '../continents/continents.service.js';
+import { CountriesService } from '../countries/countries.service.js';
 import { HierarchicalUrlService } from '../utils/hierarchical-url.service.js';
 import { HierarchicalUrlInjectorService } from '../utils/hierarchical-url-injector.service.js';
 import { WEATHER_CACHE_SERVICE } from './weather-cache.interface.js';
@@ -26,6 +28,8 @@ export class ParksController {
     private readonly parksService: ParksService,
     private readonly weatherService: WeatherService,
     private readonly ridesService: RidesService,
+    private readonly continentsService: ContinentsService,
+    private readonly countriesService: CountriesService,
     private readonly configService: ConfigService,
     private readonly urlInjector: HierarchicalUrlInjectorService,
     @Inject(WEATHER_CACHE_SERVICE)
@@ -291,11 +295,7 @@ export class ParksController {
   private async findMatchingContinent(
     continentVariations: string[],
   ): Promise<string | null> {
-    const allParks = await this.parksService.findAll({ limit: 1000 });
-    const continents = [
-      ...new Set(allParks.data.map((park) => park.continent)),
-    ];
-
+    const continents = await this.continentsService.getContinents();
     return (
       continents.find((continent) =>
         continentVariations.some(
@@ -312,13 +312,13 @@ export class ParksController {
     countryVariations: string[],
     continent?: string | null,
   ): Promise<string | null> {
-    const query: any = { limit: 1000 };
+    let countries: string[];
     if (continent) {
-      query.continent = continent;
+      countries =
+        await this.countriesService.getCountriesByContinent(continent);
+    } else {
+      countries = await this.countriesService.getCountries();
     }
-
-    const allParks = await this.parksService.findAll(query);
-    const countries = [...new Set(allParks.data.map((park) => park.country))];
 
     return (
       countries.find((country) =>

@@ -6,7 +6,7 @@ import {
   CreateDateColumn,
   Index,
 } from 'typeorm';
-import { Ride } from './ride.entity.js';
+import { Ride } from './ride.entity';
 
 @Entity()
 @Index(['ride', 'lastUpdated']) // Optimizes the duplicate check query

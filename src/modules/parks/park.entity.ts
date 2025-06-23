@@ -4,12 +4,18 @@ import {
   Column,
   OneToMany,
   ManyToOne,
+  Index,
 } from 'typeorm';
-import { ParkGroup } from './park-group.entity.js';
-import { ThemeArea } from './theme-area.entity.js';
-import { Ride } from './ride.entity.js';
+import { ParkGroup } from './park-group.entity';
+import { ThemeArea } from './theme-area.entity';
+import { Ride } from './ride.entity';
 
 @Entity()
+@Index('IDX_PARK_NAME')
+@Index('IDX_PARK_COUNTRY')
+@Index('IDX_PARK_CONTINENT')
+@Index('IDX_PARK_QUEUE_TIMES_ID', ['queueTimesId'])
+@Index('IDX_PARK_CONT_COUNTRY_NAME', ['continent', 'country', 'name'])
 export class Park {
   @PrimaryGeneratedColumn()
   id: number;

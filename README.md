@@ -79,6 +79,14 @@ pnpm run start:prod
 pnpm run start:debug
 ```
 
+### Load Testing
+
+Run load tests against common endpoints. Set `API_URL` to target a different server and optionally `LOAD_TEST_THRESHOLD_MS` to fail when average latency is too high:
+
+```bash
+pnpm run load-test
+```
+
 🎯 **API Ready!** Go to `http://localhost:3000` for interactive documentation
 
 ## ⚙️ Configuration - Make It Your Own!
@@ -95,6 +103,7 @@ Configure the API using environment variables in your `.env` file:
 | `DB_PASS` | PostgreSQL Password | `postgres` | ✅ |
 | `DB_NAME` | PostgreSQL Database Name | `parkfan` | ✅ |
 | `PARK_OPEN_THRESHOLD_PERCENT` | Park "open" threshold (0-100%) | `50` | ❌ |
+| `CACHE_TTL_SECONDS` | Global cache time-to-live | `3600` | ❌ |
 
 ## 🎯 Core Features
 

@@ -4,12 +4,17 @@ import {
   ExecutionContext,
   CallHandler,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
 @Injectable()
 export class CacheControlInterceptor implements NestInterceptor {
-  private readonly TTL_SECONDS = 300; // 5 minutes cache time
+  constructor(private readonly configService: ConfigService) {}
+
+  private get TTL_SECONDS(): number {
+    return this.configService.get<number>('CACHE_TTL_SECONDS', 3600);
+  }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const response = context.switchToHttp().getResponse();

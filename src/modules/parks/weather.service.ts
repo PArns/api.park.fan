@@ -4,11 +4,11 @@ import {
   WeatherData,
   WeatherStatus,
   OpenMeteoResponse,
-} from './weather.dto.js';
+} from './weather.dto';
 import {
   WeatherCacheService,
   WEATHER_CACHE_SERVICE,
-} from './weather-cache.interface.js';
+} from './weather-cache.interface';
 
 @Injectable()
 export class WeatherService {
