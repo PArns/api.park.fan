@@ -15,6 +15,7 @@ import { ParkQueryDto } from './parks.dto.js';
 import { RidesService } from '../rides/rides.service.js';
 import { HierarchicalUrlService } from '../utils/hierarchical-url.service.js';
 import { HierarchicalUrlInjectorService } from '../utils/hierarchical-url-injector.service.js';
+import { CacheService } from '../utils/cache.service.js';
 import { WEATHER_CACHE_SERVICE } from './weather-cache.interface.js';
 import { WeatherCacheService } from './weather-cache.interface.js';
 
@@ -28,6 +29,7 @@ export class ParksController {
     private readonly ridesService: RidesService,
     private readonly configService: ConfigService,
     private readonly urlInjector: HierarchicalUrlInjectorService,
+    private readonly cacheService: CacheService,
     @Inject(WEATHER_CACHE_SERVICE)
     private readonly weatherCache: WeatherCacheService,
   ) {}
@@ -76,6 +78,7 @@ export class ParksController {
       const validThreshold = Math.min(Math.max(threshold, 0), 100);
       const includeCrowdLevel = query.includeCrowdLevel ?? true;
       const includeWeather = query.includeWeather ?? true;
+
       const park = await this.parksService.findOne(
         id,
         validThreshold,
@@ -84,15 +87,18 @@ export class ParksController {
       );
 
       // Add hierarchical URL to the response using the injector
-      return this.urlInjector.addUrlToPark({
+      const result = this.urlInjector.addUrlToPark({
         ...park,
       });
+
+      return result;
     }
 
     const continentVariations = HierarchicalUrlService.fromSlug(continentSlug);
 
-    // Find continent match
+    // Find continent match with caching
     const continent = await this.findMatchingContinent(continentVariations);
+
     if (!continent) {
       throw new NotFoundException(`Continent not found: ${continentSlug}`);
     }
@@ -101,7 +107,7 @@ export class ParksController {
     const parks = await this.parksService.findAll({
       ...query,
       continent: continent,
-      limit: query.limit || 50,
+      limit: query.limit || 10,
     });
 
     // Add hierarchical URLs to each park using the injector
@@ -125,7 +131,7 @@ export class ParksController {
     const continentVariations = HierarchicalUrlService.fromSlug(continentSlug);
     const countryVariations = HierarchicalUrlService.fromSlug(countrySlug);
 
-    // Find continent and country matches
+    // Find continent and country matches with caching
     const continent = await this.findMatchingContinent(continentVariations);
     const country = await this.findMatchingCountry(
       countryVariations,
@@ -193,7 +199,6 @@ export class ParksController {
     if (includeWeather) {
       try {
         const parkIds = [matchingPark.id];
-
         weatherDataMap =
           await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
       } catch (error) {
@@ -221,10 +226,12 @@ export class ParksController {
       name: parkSlug.replace(/-/g, ' '),
     };
 
-    return this.urlInjector.addUrlToParkWithDetailsAndContext(
+    const result = this.urlInjector.addUrlToParkWithDetailsAndContext(
       parkDetails,
       urlContext,
     );
+
+    return result;
   }
 
   /**
@@ -272,7 +279,9 @@ export class ParksController {
       name: parkSlug.replace(/-/g, ' '),
     };
 
-    return this.urlInjector.addUrlToRide(rideDetails, urlContext);
+    const result = this.urlInjector.addUrlToRide(rideDetails, urlContext);
+
+    return result;
   }
 
   // Specific ID routes
@@ -282,50 +291,67 @@ export class ParksController {
     parkName: string;
     rides: any[];
   }> {
-    return this.parksService.findParkRides(id);
+    return await this.parksService.findParkRides(id);
   }
 
   /**
-   * Helper method to find matching continent from variations
+   * Helper method to find matching continent from variations with caching
    */
   private async findMatchingContinent(
     continentVariations: string[],
   ): Promise<string | null> {
-    const allParks = await this.parksService.findAll({ limit: 1000 });
-    const continents = [
-      ...new Set(allParks.data.map((park) => park.continent)),
-    ];
+    const cacheKey = `continent:${continentVariations.join('|')}`;
 
-    return (
+    // Check cache first
+    const cached = this.cacheService.get<string>(cacheKey);
+    if (cached !== null) {
+      return cached;
+    }
+
+    // Get from database
+    const continents = await this.parksService.getDistinctContinents();
+
+    const result =
       continents.find((continent) =>
         continentVariations.some(
           (variation) => continent.toLowerCase() === variation.toLowerCase(),
         ),
-      ) || null
-    );
+      ) || null;
+
+    // Cache the result (5 minutes TTL)
+    this.cacheService.set(cacheKey, result, 5 * 60 * 1000);
+
+    return result;
   }
 
   /**
-   * Helper method to find matching country from variations
+   * Helper method to find matching country from variations with caching
    */
   private async findMatchingCountry(
     countryVariations: string[],
     continent?: string | null,
   ): Promise<string | null> {
-    const query: any = { limit: 1000 };
-    if (continent) {
-      query.continent = continent;
+    const cacheKey = `country:${continent || 'all'}|${countryVariations.join('|')}`;
+
+    // Check cache first
+    const cached = this.cacheService.get<string>(cacheKey);
+    if (cached !== null) {
+      return cached;
     }
 
-    const allParks = await this.parksService.findAll(query);
-    const countries = [...new Set(allParks.data.map((park) => park.country))];
+    // Get from database
+    const countries = await this.parksService.getDistinctCountries(continent);
 
-    return (
+    const result =
       countries.find((country) =>
         countryVariations.some(
           (variation) => country.toLowerCase() === variation.toLowerCase(),
         ),
-      ) || null
-    );
+      ) || null;
+
+    // Cache the result (5 minutes TTL)
+    this.cacheService.set(cacheKey, result, 5 * 60 * 1000);
+
+    return result;
   }
 }

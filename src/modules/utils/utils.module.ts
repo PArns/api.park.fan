@@ -6,6 +6,7 @@ import { ReadmeService } from './readme.service.js';
 import { CacheControlInterceptor } from './cache-control.interceptor.js';
 import { HierarchicalUrlService } from './hierarchical-url.service.js';
 import { HierarchicalUrlInjectorService } from './hierarchical-url-injector.service.js';
+import { CacheService } from './cache.service.js';
 import { Ride } from '../parks/ride.entity.js';
 import { QueueTime } from '../parks/queue-time.entity.js';
 
@@ -17,6 +18,7 @@ import { QueueTime } from '../parks/queue-time.entity.js';
     CacheControlInterceptor,
     HierarchicalUrlService,
     HierarchicalUrlInjectorService,
+    CacheService,
   ],
   exports: [
     ParkUtilsService,
@@ -24,6 +26,7 @@ import { QueueTime } from '../parks/queue-time.entity.js';
     CacheControlInterceptor,
     HierarchicalUrlService,
     HierarchicalUrlInjectorService,
+    CacheService,
   ],
 })
 export class UtilsModule {}

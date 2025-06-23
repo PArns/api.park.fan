@@ -49,6 +49,40 @@ export class ParksService {
   }
 
   /**
+   * Get all distinct continents efficiently using query builder
+   */
+  async getDistinctContinents(): Promise<string[]> {
+    const result = await this.parkRepository
+      .createQueryBuilder('park')
+      .select('DISTINCT park.continent', 'continent')
+      .where('park.continent IS NOT NULL')
+      .getRawMany();
+
+    const continents = result.map((row) => row.continent).filter(Boolean);
+
+    return continents;
+  }
+
+  /**
+   * Get all distinct countries efficiently using query builder
+   */
+  async getDistinctCountries(continent?: string): Promise<string[]> {
+    const queryBuilder = this.parkRepository
+      .createQueryBuilder('park')
+      .select('DISTINCT park.country', 'country')
+      .where('park.country IS NOT NULL');
+
+    if (continent) {
+      queryBuilder.andWhere('park.continent = :continent', { continent });
+    }
+
+    const result = await queryBuilder.getRawMany();
+    const countries = result.map((row) => row.country).filter(Boolean);
+
+    return countries;
+  }
+
+  /**
    * Helper function to transform rides with current queue times
    */
   private async transformRide(ride: any) {
@@ -166,9 +200,8 @@ export class ParksService {
     // Only calculate and include crowd level if requested
     if (includeCrowdLevel) {
       try {
-        result.crowdLevel = await this.crowdLevelService.calculateCrowdLevel(
-          park,
-        );
+        result.crowdLevel =
+          await this.crowdLevelService.calculateCrowdLevel(park);
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -269,9 +302,8 @@ export class ParksService {
     // Only calculate and include crowd level if requested
     if (includeCrowdLevel) {
       try {
-        result.crowdLevel = await this.crowdLevelService.calculateCrowdLevel(
-          park,
-        );
+        result.crowdLevel =
+          await this.crowdLevelService.calculateCrowdLevel(park);
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -321,124 +353,162 @@ export class ParksService {
     } = query;
 
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
+
+    // Step 1: Get parks with minimal JOINs for faster querying
     const queryBuilder = this.parkRepository
       .createQueryBuilder('park')
-      .leftJoinAndSelect('park.parkGroup', 'parkGroup')
-      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
-      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
-      .leftJoinAndSelect('park.rides', 'rides');
+      .leftJoinAndSelect('park.parkGroup', 'parkGroup');
 
-    // Apply filters
+    // Apply filters with optimized WHERE clauses
     if (search) {
+      // Use ILIKE for case-insensitive search (works better with indexes)
       queryBuilder.andWhere(
-        '(LOWER(park.name) LIKE LOWER(:search) OR LOWER(park.country) LIKE LOWER(:search))',
+        '(park.name ILIKE :search OR park.country ILIKE :search)',
         { search: `%${search}%` },
       );
     }
 
     if (country) {
-      queryBuilder.andWhere('LOWER(park.country) = LOWER(:country)', {
-        country,
-      });
+      queryBuilder.andWhere('park.country = :country', { country });
     }
 
     if (continent) {
-      queryBuilder.andWhere('LOWER(park.continent) = LOWER(:continent)', {
-        continent,
-      });
+      queryBuilder.andWhere('park.continent = :continent', { continent });
     }
 
     if (parkGroupId) {
       queryBuilder.andWhere('park.parkGroup.id = :parkGroupId', {
         parkGroupId,
       });
-    } // Apply pagination
+    }
+
+    // Apply pagination
     const offset = (page - 1) * limit;
     queryBuilder.skip(offset).take(limit);
 
     // Order by name
     queryBuilder.orderBy('park.name', 'ASC');
 
-    // Get total count for pagination
+    // Get total count for pagination (separate optimized query)
     const totalCount = await queryBuilder.getCount();
+
+    // Get parks
     const parks = await queryBuilder.getMany();
 
-    // Optimize weather data retrieval for multiple parks
-    let weatherDataMap = new Map<number, any>();
-    if (includeWeather && parks.length > 0) {
-      try {
-        // Get all weather data in one batch call using park IDs
-        const parkIds = parks.map((park) => park.id);
+    if (parks.length === 0) {
+      return {
+        data: [],
+        pagination: {
+          page,
+          limit,
+          totalCount,
+          totalPages: Math.ceil(totalCount / limit),
+          hasNext: page * limit < totalCount,
+          hasPrev: page > 1,
+        },
+      };
+    }
 
+    const parkIds = parks.map((park) => park.id);
+
+    // Step 2: Load theme areas and rides separately for better performance
+    const themeAreas = await this.parkRepository
+      .createQueryBuilder('park')
+      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
+      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
+      .where('park.id IN (:...parkIds)', { parkIds })
+      .getMany();
+
+    // Step 3: Load direct park rides
+    const parkRides = await this.parkRepository
+      .createQueryBuilder('park')
+      .leftJoinAndSelect('park.rides', 'rides')
+      .where('park.id IN (:...parkIds)', { parkIds })
+      .getMany();
+
+    // Step 4: Merge the data
+    const themeAreaMap = new Map();
+    const parkRidesMap = new Map();
+
+    themeAreas.forEach((park) => {
+      themeAreaMap.set(park.id, park.themeAreas || []);
+    });
+
+    parkRides.forEach((park) => {
+      parkRidesMap.set(park.id, park.rides || []);
+    });
+
+    parks.forEach((park) => {
+      park.themeAreas = themeAreaMap.get(park.id) || [];
+      park.rides = parkRidesMap.get(park.id) || [];
+    });
+
+    // Step 5: Optimized queue times loading
+    const allRides = parks.flatMap((park) => [
+      ...park.rides,
+      ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
+    ]);
+
+    if (allRides.length > 0) {
+      const rideIds = allRides.map((ride) => ride.id);
+
+      // Use optimized query with proper indexing
+      const latestQueueTimes = await this.parkRepository.query(
+        `
+        SELECT DISTINCT ON (qt."rideId") 
+          qt."rideId",
+          qt.id,
+          qt."waitTime",
+          qt."isOpen",
+          qt."lastUpdated",
+          qt."recordedAt"
+        FROM queue_time qt
+        WHERE qt."rideId" = ANY($1)
+        ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+      `,
+        [rideIds],
+      );
+
+      // Create queue time map
+      const queueTimeMap = new Map();
+      latestQueueTimes.forEach((qt) => {
+        queueTimeMap.set(qt.rideId, [
+          {
+            id: qt.id,
+            waitTime: qt.waitTime,
+            isOpen: qt.isOpen,
+            lastUpdated: qt.lastUpdated,
+            recordedAt: qt.recordedAt,
+          },
+        ]);
+      });
+
+      // Attach queue times
+      parks.forEach((park) => {
+        park.rides.forEach((ride) => {
+          ride.queueTimes = queueTimeMap.get(ride.id) || [];
+        });
+
+        park.themeAreas?.forEach((themeArea) => {
+          themeArea.rides?.forEach((ride) => {
+            ride.queueTimes = queueTimeMap.get(ride.id) || [];
+          });
+        });
+      });
+    }
+
+    // Step 6: Batch weather data loading
+    let weatherDataMap = new Map<number, any>();
+    if (includeWeather) {
+      try {
         weatherDataMap =
           await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
       } catch (error) {
         this.logger.warn('Error retrieving batch weather data:', error);
-        // Continue without weather data if batch fails
       }
     }
 
-    // Load queue times efficiently for all parks at once
-    if (parks.length > 0) {
-      // Collect all ride IDs from all parks
-      const allRides = parks.flatMap((park) => [
-        ...park.rides,
-        ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
-      ]);
-
-      if (allRides.length > 0) {
-        const rideIds = allRides.map((ride) => ride.id);
-
-        // Get the most recent queue time for each ride in one efficient query
-        const latestQueueTimes = await this.parkRepository.query(
-          `
-          WITH latest_queue_times AS (
-            SELECT DISTINCT ON (qt."rideId") 
-              qt."rideId",
-              qt.id,
-              qt."waitTime",
-              qt."isOpen",
-              qt."lastUpdated",
-              qt."recordedAt"
-            FROM queue_time qt
-            WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
-            ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
-          )
-          SELECT * FROM latest_queue_times
-        `,
-          rideIds,
-        );
-
-        // Create a map for quick lookup
-        const queueTimeMap = new Map();
-        latestQueueTimes.forEach((qt) => {
-          queueTimeMap.set(qt.rideId, [
-            {
-              id: qt.id,
-              waitTime: qt.waitTime,
-              isOpen: qt.isOpen,
-              lastUpdated: qt.lastUpdated,
-              recordedAt: qt.recordedAt,
-            },
-          ]);
-        });
-
-        // Attach the latest queue times to all rides in all parks
-        parks.forEach((park) => {
-          park.rides.forEach((ride) => {
-            ride.queueTimes = queueTimeMap.get(ride.id) || [];
-          });
-
-          park.themeAreas?.forEach((themeArea) => {
-            themeArea.rides?.forEach((ride) => {
-              ride.queueTimes = queueTimeMap.get(ride.id) || [];
-            });
-          });
-        });
-      }
-    }
-
-    // Transform the data using helper functions
+    // Step 7: Transform data
     const transformedParks = await Promise.all(
       parks.map((park) =>
         this.transformParkWithWeatherData(
