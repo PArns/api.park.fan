@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Park } from './park.entity.js';
@@ -6,10 +7,6 @@ import { ParkQueryDto } from './parks.dto.js';
 import { CrowdLevelService } from './crowd-level.service.js';
 import { WeatherService } from './weather.service.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
-import {
-  ParkOperatingStatus,
-  WaitTimeDistribution,
-} from '../utils/park-utils.types.js';
 
 @Injectable()
 export class ParksService {
@@ -21,7 +18,27 @@ export class ParksService {
     private readonly parkUtils: ParkUtilsService,
     private readonly crowdLevelService: CrowdLevelService,
     private readonly weatherService: WeatherService,
+    private readonly configService: ConfigService,
   ) {}
+
+  private cache = new Map<string, { value: any; timestamp: number }>();
+
+  private get CACHE_TTL() {
+    const seconds = this.configService.get<number>('CACHE_TTL_SECONDS', 3600);
+    return Math.min(seconds, 300) * 1000;
+  }
+
+  private getCached(key: string): any | null {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+      return cached.value;
+    }
+    return null;
+  }
+
+  private setCached(key: string, value: any): void {
+    this.cache.set(key, { value, timestamp: Date.now() });
+  }
 
   /**
    * Get the default park open threshold from configuration
@@ -32,39 +49,15 @@ export class ParksService {
   }
 
   /**
-   * Helper function to extract current queue time from a ride
-   * @private
-   */
-  private getCurrentQueueTime(ride: any) {
-    return this.parkUtils.getCurrentQueueTime(ride);
-  }
-
-  /**
-   * Helper function to calculate if a park is open based on the percentage of open rides
-   * @private
-   */
-  private calculateParkOpenStatus(
-    park: any,
-    openThreshold?: number,
-  ): ParkOperatingStatus {
-    return this.parkUtils.getDetailedParkOpenStatus(park, openThreshold);
-  }
-
-  /**
-   * Helper function to calculate wait time distribution for a park
-   * @private
-   */
-  private calculateWaitTimeDistribution(park: any): WaitTimeDistribution {
-    return this.parkUtils.calculateWaitTimeDistribution(park);
-  }
-
-  /**
    * Helper function to transform rides with current queue times
    */
-  private transformRide(ride: any) {
+  private async transformRide(ride: any) {
+    const currentQueueTime =
+      ride.queueTimes && ride.queueTimes.length > 0 ? ride.queueTimes[0] : null;
+
     return {
       ...ride,
-      currentQueueTime: this.getCurrentQueueTime(ride),
+      currentQueueTime,
       queueTimes: undefined, // Remove the full queueTimes array from response
       themeArea: undefined, // Remove theme area reference to avoid circular data
       park: undefined, // Remove park reference to avoid circular data
@@ -74,10 +67,14 @@ export class ParksService {
   /**
    * Helper function to transform theme areas with rides
    */
-  private transformThemeArea(themeArea: any) {
+  private async transformThemeArea(themeArea: any) {
+    const rides = await Promise.all(
+      themeArea.rides.map((ride) => this.transformRide(ride)),
+    );
+
     return {
       ...themeArea,
-      rides: themeArea.rides.map((ride) => this.transformRide(ride)),
+      rides,
       park: undefined, // Remove park reference to avoid circular data
     };
   }
@@ -91,8 +88,12 @@ export class ParksService {
     includeCrowdLevel: boolean = true,
     includeWeather: boolean = true,
   ) {
-    const openStatus = this.calculateParkOpenStatus(park, openThreshold);
-    const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
+    const openStatus = await this.parkUtils.getDetailedParkOpenStatusFromDb(
+      park.id,
+      openThreshold,
+    );
+    const waitTimeDistribution =
+      await this.parkUtils.calculateWaitTimeDistributionFromDb(park.id);
 
     // Get cached weather data for park (current + forecast) - never make API calls during request processing
     let weatherData = null;
@@ -111,8 +112,8 @@ export class ParksService {
     }
 
     // Handle parks with and without theme areas
-    let themeAreas = park.themeAreas.map((themeArea) =>
-      this.transformThemeArea(themeArea),
+    let themeAreas = await Promise.all(
+      park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea)),
     );
 
     // If park has no theme areas but has direct rides, create a virtual theme area
@@ -126,7 +127,9 @@ export class ParksService {
             id: null,
             queueTimesId: null,
             name: 'Rides', // Generic name for rides without theme area
-            rides: unassignedRides.map((ride) => this.transformRide(ride)),
+            rides: await Promise.all(
+              unassignedRides.map((ride) => this.transformRide(ride)),
+            ),
           },
         ];
       }
@@ -163,11 +166,9 @@ export class ParksService {
     // Only calculate and include crowd level if requested
     if (includeCrowdLevel) {
       try {
-        result.crowdLevel =
-          await this.crowdLevelService.calculateCrowdLevelWithTimeout(
-            park,
-            2000,
-          );
+        result.crowdLevel = await this.crowdLevelService.calculateCrowdLevel(
+          park,
+        );
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -200,8 +201,12 @@ export class ParksService {
     includeCrowdLevel: boolean = true,
     includeWeather: boolean = true,
   ) {
-    const openStatus = this.calculateParkOpenStatus(park, openThreshold);
-    const waitTimeDistribution = this.calculateWaitTimeDistribution(park);
+    const openStatus = await this.parkUtils.getDetailedParkOpenStatusFromDb(
+      park.id,
+      openThreshold,
+    );
+    const waitTimeDistribution =
+      await this.parkUtils.calculateWaitTimeDistributionFromDb(park.id);
 
     // Get pre-fetched weather data from map using park ID
     let weatherData = null;
@@ -210,8 +215,8 @@ export class ParksService {
     }
 
     // Handle parks with and without theme areas
-    let themeAreas = park.themeAreas.map((themeArea) =>
-      this.transformThemeArea(themeArea),
+    let themeAreas = await Promise.all(
+      park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea)),
     );
 
     // If park has no theme areas but has direct rides, create a virtual theme area
@@ -225,7 +230,9 @@ export class ParksService {
             id: null,
             queueTimesId: null,
             name: 'Rides', // Generic name for rides without theme area
-            rides: unassignedRides.map((ride) => this.transformRide(ride)),
+            rides: await Promise.all(
+              unassignedRides.map((ride) => this.transformRide(ride)),
+            ),
           },
         ];
       }
@@ -262,11 +269,9 @@ export class ParksService {
     // Only calculate and include crowd level if requested
     if (includeCrowdLevel) {
       try {
-        result.crowdLevel =
-          await this.crowdLevelService.calculateCrowdLevelWithTimeout(
-            park,
-            2000,
-          );
+        result.crowdLevel = await this.crowdLevelService.calculateCrowdLevel(
+          park,
+        );
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -663,7 +668,7 @@ export class ParksService {
           id: themeArea.id,
           name: themeArea.name,
         },
-        currentQueueTime: this.getCurrentQueueTime(ride),
+        currentQueueTime: this.getLatestQueueTime(ride.queueTimes),
       })),
     );
 
@@ -673,7 +678,7 @@ export class ParksService {
       name: ride.name,
       isActive: ride.isActive,
       themeArea: null, // Direct park rides don't belong to a theme area
-      currentQueueTime: this.getCurrentQueueTime(ride),
+      currentQueueTime: this.getLatestQueueTime(ride.queueTimes),
     }));
 
     // Combine all rides, avoiding duplicates
@@ -687,6 +692,250 @@ export class ParksService {
       parkName: park.name,
       rides: combinedRides,
     };
+  }
+
+  /**
+   * Get all parks for a given continent slug using direct SQL queries
+   */
+  async findParksByContinentSlug(
+    continentSlug: string,
+    query: ParkQueryDto = {},
+  ): Promise<any> {
+    const cacheKey = `continent:${continentSlug}:${JSON.stringify(query)}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const continentVariations = this.generateNameVariations(continentSlug);
+
+    const parks = await this.parkRepository
+      .createQueryBuilder('park')
+      .leftJoinAndSelect('park.parkGroup', 'parkGroup')
+      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
+      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
+      .leftJoinAndSelect('park.rides', 'rides')
+      .where('LOWER(park.continent) IN (:...continents)', {
+        continents: continentVariations.map((v) => v.toLowerCase()),
+      })
+      .orderBy('park.name', 'ASC')
+      .getMany();
+
+    let weatherDataMap = new Map<number, any>();
+    if ((query.includeWeather ?? true) && parks.length > 0) {
+      try {
+        const parkIds = parks.map((p) => p.id);
+        weatherDataMap =
+          await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
+      } catch (error) {
+        this.logger.warn(
+          'Error retrieving weather data for continent query:',
+          error,
+        );
+      }
+    }
+
+    const parksData = await Promise.all(
+      parks.map((park) =>
+        this.transformParkWithWeatherData(
+          park,
+          weatherDataMap,
+          query.openThreshold ?? this.getDefaultOpenThreshold(),
+          query.includeCrowdLevel ?? true,
+          query.includeWeather ?? true,
+        ),
+      ),
+    );
+
+    const payload = {
+      data: parksData,
+      pagination: {
+        page: 1,
+        limit: parksData.length,
+        totalCount: parksData.length,
+        totalPages: 1,
+        hasNext: false,
+        hasPrev: false,
+      },
+    };
+
+    this.setCached(cacheKey, payload);
+    return payload;
+  }
+
+  /**
+   * Get all parks for a given country slug using direct SQL queries
+   */
+  async findParksByCountrySlug(
+    countrySlug: string,
+    query: ParkQueryDto = {},
+  ): Promise<any> {
+    const cacheKey = `country:${countrySlug}:${JSON.stringify(query)}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const countryVariations = this.generateNameVariations(countrySlug);
+
+    // Filter by country variations directly in SQL using query builder
+    const parks = await this.parkRepository
+      .createQueryBuilder('park')
+      .leftJoinAndSelect('park.parkGroup', 'parkGroup')
+      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
+      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
+      .leftJoinAndSelect('park.rides', 'rides')
+      .where('LOWER(park.country) IN (:...countries)', {
+        countries: countryVariations.map((v) => v.toLowerCase()),
+      })
+      .orderBy('park.name', 'ASC')
+      .getMany();
+
+    let weatherDataMap = new Map<number, any>();
+    if ((query.includeWeather ?? true) && parks.length > 0) {
+      try {
+        const parkIds = parks.map((p) => p.id);
+        weatherDataMap =
+          await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
+      } catch (error) {
+        this.logger.warn(
+          'Error retrieving weather data for country query:',
+          error,
+        );
+      }
+    }
+
+    const parksData = await Promise.all(
+      parks.map((park) =>
+        this.transformParkWithWeatherData(
+          park,
+          weatherDataMap,
+          query.openThreshold ?? this.getDefaultOpenThreshold(),
+          query.includeCrowdLevel ?? true,
+          query.includeWeather ?? true,
+        ),
+      ),
+    );
+
+    const payload = {
+      data: parksData,
+      pagination: {
+        page: 1,
+        limit: parksData.length,
+        totalCount: parksData.length,
+        totalPages: 1,
+        hasNext: false,
+        hasPrev: false,
+      },
+    };
+
+    this.setCached(cacheKey, payload);
+    return payload;
+  }
+
+  /**
+   * Find a park within a country by park slug using SQL queries
+   */
+  async findParkByCountryAndName(
+    countrySlug: string,
+    parkSlug: string,
+  ): Promise<any | null> {
+    const cacheKey = `park:${countrySlug}:${parkSlug}`;
+    const cached = this.getCached(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const countryVariations = this.generateNameVariations(countrySlug);
+    const parkVariations = this.generateNameVariations(parkSlug);
+
+    const queryBuilder = this.parkRepository
+      .createQueryBuilder('park')
+      .leftJoinAndSelect('park.parkGroup', 'parkGroup')
+      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
+      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
+      .leftJoinAndSelect('park.rides', 'rides')
+      .where('LOWER(park.country) IN (:...countries)', {
+        countries: countryVariations.map((v) => v.toLowerCase()),
+      })
+      .andWhere('LOWER(park.name) IN (:...parks)', {
+        parks: parkVariations.map((v) => v.toLowerCase()),
+      });
+
+    const park = await queryBuilder.getOne();
+    if (!park) {
+      return null;
+    }
+
+    const allRides = [
+      ...park.rides,
+      ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
+    ];
+
+    if (allRides.length > 0) {
+      const rideIds = allRides.map((ride) => ride.id);
+
+      const latestQueueTimes = await this.parkRepository.query(
+        `
+        WITH latest_queue_times AS (
+          SELECT DISTINCT ON (qt."rideId")
+            qt."rideId",
+            qt.id,
+            qt."waitTime",
+            qt."isOpen",
+            qt."lastUpdated",
+            qt."recordedAt"
+          FROM queue_time qt
+          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
+          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+        )
+        SELECT * FROM latest_queue_times
+      `,
+        rideIds,
+      );
+
+      const queueTimeMap = new Map();
+      latestQueueTimes.forEach((qt) => {
+        queueTimeMap.set(qt.rideId, [
+          {
+            id: qt.id,
+            waitTime: qt.waitTime,
+            isOpen: qt.isOpen,
+            lastUpdated: qt.lastUpdated,
+            recordedAt: qt.recordedAt,
+          },
+        ]);
+      });
+
+      park.rides.forEach((ride) => {
+        ride.queueTimes = queueTimeMap.get(ride.id) || [];
+      });
+
+      park.themeAreas?.forEach((themeArea) => {
+        themeArea.rides?.forEach((ride) => {
+          ride.queueTimes = queueTimeMap.get(ride.id) || [];
+        });
+      });
+    }
+
+    let weatherDataMap = new Map<number, any>();
+    try {
+      weatherDataMap =
+        await this.weatherService.getBatchCompleteWeatherForParks([park.id]);
+    } catch (error) {
+      this.logger.warn('Error retrieving weather data for park:', error);
+    }
+
+    const transformed = await this.transformParkWithWeatherData(
+      park,
+      weatherDataMap,
+      this.getDefaultOpenThreshold(),
+      true,
+      true,
+    );
+
+    this.setCached(cacheKey, transformed);
+    return transformed;
   }
 
   /**

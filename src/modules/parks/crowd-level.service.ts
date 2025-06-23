@@ -2,8 +2,14 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { QueueTime } from './queue-time.entity.js';
-import { CrowdLevel, Park as ParkType } from '../utils/park-utils.types.js';
+import {
+  CrowdLevel,
+  Park as ParkType,
+  Ride as RideType,
+} from '../utils/park-utils.types.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
+
+type RideWithQueueTime = RideType & { latestQueueTime: QueueTime | null };
 
 /**
  * Service for calculating park crowd levels based on historical queue time data
@@ -34,7 +40,7 @@ export class CrowdLevelService {
       );
 
       // Get all rides from the park that have recent queue time data
-      const ridesWithCurrentData = this.getRidesWithCurrentData(park);
+      const ridesWithCurrentData = await this.getRidesWithCurrentData(park);
 
       if (ridesWithCurrentData.length === 0) {
         this.logger.debug(
@@ -98,94 +104,91 @@ export class CrowdLevelService {
         label: this.getCrowdLevelLabel(crowdLevel),
         ridesUsed: topRides.length,
         totalRides: ridesWithCurrentData.length,
+        confidence: confidence,
         historicalBaseline: Math.round(historicalBaseline),
         currentAverage: Math.round(currentAverage),
-        confidence,
         calculatedAt: new Date(),
       };
     } catch (error) {
       this.logger.error(
-        `Error calculating crowd level for park ${park.id}:`,
+        `Failed to calculate crowd level for park: ${park.id}`,
         error,
       );
-      return this.getDefaultCrowdLevel(0, 0, 'Calculation error');
+      return this.getDefaultCrowdLevel(
+        0,
+        0,
+        'An error occurred during calculation',
+      );
     }
   }
 
   /**
-   * Calculate crowd level for a park with timeout protection
+   * Get rides that have current data and are not closed
+   * @param park The park to get rides from
+   * @returns A list of rides with their latest queue time
    */
-  async calculateCrowdLevelWithTimeout(
+  private async getRidesWithCurrentData(
     park: ParkType,
-    timeoutMs: number = 2000,
-  ): Promise<CrowdLevel> {
-    return new Promise(async (resolve) => {
-      // Set up timeout
-      const timeoutId = setTimeout(() => {
-        this.logger.warn(
-          `Crowd level calculation timed out after ${timeoutMs}ms for park: ${park.name}`,
-        );
-        resolve(this.getDefaultCrowdLevel(0, 0, 'Calculation timeout'));
-      }, timeoutMs);
+  ): Promise<RideWithQueueTime[]> {
+    if (!park.rides || park.rides.length === 0) {
+      return [];
+    }
 
-      try {
-        const result = await this.calculateCrowdLevel(park);
-        clearTimeout(timeoutId);
-        resolve(result);
-      } catch (error) {
-        clearTimeout(timeoutId);
-        this.logger.error(
-          `Error calculating crowd level for park ${park.name}:`,
-          error,
-        );
-        resolve(this.getDefaultCrowdLevel(0, 0, 'Calculation error'));
-      }
+    const rideIds = park.rides.map((r) => r.id);
+
+    // Get the latest queue time for each ride using a single query
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const latestQueueTimes: any[] = await this.queueTimeRepository
+      .createQueryBuilder('qt')
+      .select('qt.*')
+      .distinctOn(['qt.rideId'])
+      .where('qt.rideId IN (:...rideIds)', { rideIds })
+      .orderBy('qt.rideId')
+      .addOrderBy('qt.recordedAt', 'DESC')
+      .getRawMany();
+
+    const latestQueueTimesMap = new Map<number, QueueTime>(
+      latestQueueTimes.map((qt) => [qt.rideId, qt]),
+    );
+
+    const ridesWithQueueTime: RideWithQueueTime[] = park.rides.map((ride) => ({
+      ...ride,
+      latestQueueTime: latestQueueTimesMap.get(ride.id) ?? null,
+    }));
+
+    // Filter out rides that are closed or have no data
+    return ridesWithQueueTime.filter((ride) => {
+      return ride.latestQueueTime && ride.latestQueueTime.isOpen;
     });
   }
 
   /**
-   * Get rides with current queue time data
+   * Get the current wait time for a ride
+   * @param ride The ride to get the wait time for
+   * @returns The current wait time or 0 if not available
    */
-  private getRidesWithCurrentData(park: ParkType): any[] {
-    const allRides = this.parkUtils.getAllRidesFromPark(park);
-    const ridesWithData = allRides.filter((ride) => {
-      // Check if ride has currentQueueTime (transformed data) or queueTimes array (raw data)
-      const currentQueueTime =
-        (ride as any).currentQueueTime ||
-        this.parkUtils.getCurrentQueueTime(ride);
-
-      return (
-        currentQueueTime &&
-        currentQueueTime.isOpen &&
-        currentQueueTime.waitTime !== null &&
-        currentQueueTime.waitTime > 0
-      );
-    });
-
-    return ridesWithData;
+  private getCurrentWaitTime(ride: RideWithQueueTime): number {
+    if (ride.latestQueueTime && ride.latestQueueTime.isOpen) {
+      return ride.latestQueueTime.waitTime ?? 0;
+    }
+    return 0;
   }
 
   /**
-   * Get current wait time for a ride
+   * Calculate the average wait time for a list of rides
+   * @param rides The rides to calculate the average wait time for
+   * @returns The average wait time
    */
-  private getCurrentWaitTime(ride: any): number {
-    // Handle both transformed data (currentQueueTime) and raw data (queueTimes array)
-    const currentQueueTime =
-      ride.currentQueueTime || this.parkUtils.getCurrentQueueTime(ride);
-    return currentQueueTime?.waitTime || 0;
-  }
+  private calculateAverageWaitTime(rides: RideWithQueueTime[]): number {
+    const waitTimes = rides
+      .map((ride) => this.getCurrentWaitTime(ride))
+      .filter((wt) => wt > 0);
 
-  /**
-   * Calculate average wait time for a list of rides
-   */
-  private calculateAverageWaitTime(rides: any[]): number {
-    if (rides.length === 0) return 0;
-
-    const totalWaitTime = rides.reduce((sum, ride) => {
-      return sum + this.getCurrentWaitTime(ride);
-    }, 0);
-
-    return totalWaitTime / rides.length;
+    if (waitTimes.length === 0) {
+      return 0;
+    }
+    const sum = waitTimes.reduce((a, b) => a + b, 0);
+    return Math.round(sum / waitTimes.length);
   }
 
   /**
@@ -200,25 +203,31 @@ export class CrowdLevelService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.HISTORICAL_WINDOW_DAYS);
 
-    const historicalData = await this.queueTimeRepository
-      .createQueryBuilder('qt')
-      .select('AVG(qt.waitTime)', 'avgWaitTime')
-      .addSelect("DATE_TRUNC('hour', qt.lastUpdated)", 'timeSlot')
-      .where('qt.rideId IN (:...rideIds)', { rideIds })
-      .andWhere('qt.lastUpdated >= :cutoffDate', { cutoffDate })
-      .andWhere('qt.isOpen = true')
-      .andWhere('qt.waitTime > 0')
-      .groupBy("DATE_TRUNC('hour', qt.lastUpdated)")
-      .orderBy('AVG(qt.waitTime)', 'ASC')
-      .getRawMany();
+    const result = await this.queueTimeRepository.query(
+      `
+      WITH hourly AS (
+        SELECT DATE_TRUNC('hour', qt."lastUpdated") AS hour_slot,
+               AVG(qt."waitTime") AS avg_wait
+        FROM queue_time qt
+        WHERE qt."rideId" = ANY($1)
+          AND qt."lastUpdated" >= $2
+          AND qt."isOpen" = true
+          AND qt."waitTime" > 0
+        GROUP BY hour_slot
+      )
+      SELECT COUNT(*) AS count,
+             PERCENTILE_CONT($3) WITHIN GROUP (ORDER BY avg_wait) AS percentile
+      FROM hourly
+      `,
+      [rideIds, cutoffDate.toISOString(), this.PERCENTILE],
+    );
 
-    if (historicalData.length < this.MIN_DATA_POINTS) {
+    const row = result[0];
+    if (!row || parseInt(row.count, 10) < this.MIN_DATA_POINTS) {
       return 0;
     }
 
-    // Calculate 95th percentile
-    const percentileIndex = Math.floor(historicalData.length * this.PERCENTILE);
-    return parseFloat(historicalData[percentileIndex]?.avgWaitTime || '0');
+    return parseFloat(row.percentile);
   }
 
   /**
@@ -230,25 +239,27 @@ export class CrowdLevelService {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.HISTORICAL_WINDOW_DAYS);
 
-    // Get the date range of available data
-    const dataRange = await this.queueTimeRepository
-      .createQueryBuilder('qt')
-      .select('MIN(qt.lastUpdated)', 'firstDate')
-      .addSelect('MAX(qt.lastUpdated)', 'lastDate')
-      .addSelect('COUNT(*)', 'totalCount')
-      .where('qt.rideId IN (:...rideIds)', { rideIds })
-      .andWhere('qt.lastUpdated >= :cutoffDate', { cutoffDate })
-      .andWhere('qt.isOpen = true')
-      .andWhere('qt.waitTime > 0')
-      .getRawOne();
+    const dataRange = await this.queueTimeRepository.query(
+      `
+      SELECT MIN(qt."lastUpdated") AS "firstDate",
+             MAX(qt."lastUpdated") AS "lastDate",
+             COUNT(*) AS "totalCount"
+      FROM queue_time qt
+      WHERE qt."rideId" = ANY($1)
+        AND qt."lastUpdated" >= $2
+        AND qt."isOpen" = true
+        AND qt."waitTime" > 0
+      `,
+      [rideIds, cutoffDate.toISOString()],
+    );
 
-    if (!dataRange || !dataRange.firstDate || dataRange.totalCount === 0) {
+    const rangeRow = dataRange[0];
+
+    if (!rangeRow || !rangeRow.firstDate || rangeRow.totalCount === '0') {
       return 10; // Minimum confidence when no data
     }
-
-    // Calculate how many days of data we have vs the full historical window
-    const firstDataDate = new Date(dataRange.firstDate);
-    const lastDataDate = new Date(dataRange.lastDate);
+    const firstDataDate = new Date(rangeRow.firstDate);
+    const lastDataDate = new Date(rangeRow.lastDate);
     const today = new Date();
 
     // Calculate actual data coverage (days between first and last data point)
@@ -264,7 +275,7 @@ export class CrowdLevelService {
     );
 
     // Also consider data density (minimum data points per day)
-    const totalCount = parseInt(dataRange.totalCount);
+    const totalCount = parseInt(rangeRow.totalCount, 10);
     const expectedDataPointsPerDay = 24; // Assuming hourly data
     const expectedTotalPoints =
       this.HISTORICAL_WINDOW_DAYS * expectedDataPointsPerDay * rideIds.length;

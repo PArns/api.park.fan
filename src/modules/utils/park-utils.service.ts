@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Ride as RideEntity } from '../parks/ride.entity';
+import { QueueTime as QueueTimeEntity } from '../parks/queue-time.entity';
 import {
   Park,
-  Ride,
+  Ride as RideType,
   WaitTimeDistribution,
   ParkOperatingStatus,
   QueueTime,
@@ -14,7 +18,13 @@ import {
  */
 @Injectable()
 export class ParkUtilsService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @InjectRepository(RideEntity)
+    private readonly rideRepository: Repository<RideEntity>,
+    @InjectRepository(QueueTimeEntity)
+    private readonly queueTimeRepository: Repository<QueueTimeEntity>,
+  ) {}
 
   /**
    * Get the default park open threshold from configuration
@@ -29,7 +39,7 @@ export class ParkUtilsService {
    * @param park Park object with themeAreas and rides
    * @returns Array of all rides
    */
-  getAllRidesFromPark(park: Park): Ride[] {
+  getAllRidesFromPark(park: Park): RideType[] {
     // Get rides from theme areas
     const themeAreaRides = park.themeAreas.flatMap(
       (themeArea) => themeArea.rides,
@@ -39,27 +49,33 @@ export class ParkUtilsService {
     const directParkRides = park.rides || [];
 
     // Combine both arrays, avoiding duplicates (rides might be in both)
-    const allRidesMap = new Map<number, Ride>();
+    const allRidesMap = new Map<number, RideType>();
 
     // Add theme area rides
-    themeAreaRides.forEach((ride) => allRidesMap.set(ride.id, ride));
+    themeAreaRides.forEach((ride: RideType) => allRidesMap.set(ride.id, ride));
 
     // Add direct park rides (this will overwrite theme area rides if there are duplicates)
-    directParkRides.forEach((ride) => allRidesMap.set(ride.id, ride));
+    directParkRides.forEach((ride: RideType) => allRidesMap.set(ride.id, ride));
 
     return Array.from(allRidesMap.values());
   }
+
   /**
-   * Helper function to extract current queue time from a ride
-   * @param ride Ride object with queueTimes array
-   * @returns Current queue time information or null if not available
+   * Get the latest queue time for a ride directly from the database
    */
-  getCurrentQueueTime(ride: Ride): QueueTime | null {
-    return ride.queueTimes && ride.queueTimes.length > 0
+  async getCurrentQueueTimeFromDb(rideId: number): Promise<QueueTime | null> {
+    const latest = await this.queueTimeRepository
+      .createQueryBuilder('qt')
+      .where('qt."rideId" = :rideId', { rideId })
+      .orderBy('qt."lastUpdated"', 'DESC')
+      .limit(1)
+      .getOne();
+
+    return latest
       ? {
-          waitTime: ride.queueTimes[0].waitTime,
-          isOpen: ride.queueTimes[0].isOpen,
-          lastUpdated: ride.queueTimes[0].lastUpdated,
+          waitTime: latest.waitTime,
+          isOpen: latest.isOpen,
+          lastUpdated: latest.lastUpdated,
         }
       : null;
   }
@@ -69,27 +85,15 @@ export class ParkUtilsService {
    * @param openThreshold Optional percentage threshold (0-100)
    * @returns Boolean indicating if the park is considered "open"
    */
-  calculateParkOpenStatus(park: Park, openThreshold?: number): boolean {
-    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
-
-    // Get all rides from all sources (theme areas + direct park rides)
-    const allRides = this.getAllRidesFromPark(park);
-    const totalRideCount = allRides.length;
-
-    if (totalRideCount === 0) {
-      return false;
-    }
-
-    // Count rides that are currently open (have queue time data and isOpen = true)
-    const openRideCount = allRides.filter((ride) => {
-      const currentQueueTime = this.getCurrentQueueTime(ride);
-      return currentQueueTime && currentQueueTime.isOpen;
-    }).length;
-
-    const operatingPercentage = Math.round(
-      (openRideCount / totalRideCount) * 100,
+  async calculateParkOpenStatus(
+    park: Park,
+    openThreshold?: number,
+  ): Promise<boolean> {
+    const status = await this.getDetailedParkOpenStatusFromDb(
+      park.id,
+      openThreshold,
     );
-    return operatingPercentage >= threshold;
+    return status.isOpen;
   }
   /**
    * Helper function to get detailed park open status with additional metrics
@@ -97,41 +101,115 @@ export class ParkUtilsService {
    * @param openThreshold Optional percentage threshold (0-100)
    * @returns Detailed operating status including counts and percentages
    */
-  getDetailedParkOpenStatus(
+  async getDetailedParkOpenStatus(
     park: Park,
     openThreshold?: number,
-  ): ParkOperatingStatus {
+  ): Promise<ParkOperatingStatus> {
+    return this.getDetailedParkOpenStatusFromDb(park.id, openThreshold);
+  }
+
+  /**
+   * Optimized version of getDetailedParkOpenStatus using direct SQL queries
+   */
+  async getDetailedParkOpenStatusFromDb(
+    parkId: number,
+    openThreshold?: number,
+  ): Promise<ParkOperatingStatus> {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
 
-    // Get all rides from all sources (theme areas + direct park rides)
-    const allRides = this.getAllRidesFromPark(park);
-    const totalRideCount = allRides.length;
+    const latestSubQuery = this.queueTimeRepository
+      .createQueryBuilder('qt')
+      .distinctOn(['qt."rideId"'])
+      .select('qt."rideId"', 'rideId')
+      .addSelect('qt."isOpen"', 'isOpen')
+      .innerJoin(RideEntity, 'r', 'r.id = qt."rideId"')
+      .where('r."parkId" = :parkId', { parkId })
+      .orderBy('qt."rideId"')
+      .addOrderBy('qt."lastUpdated"', 'DESC')
+      .addOrderBy('qt."recordedAt"', 'DESC');
 
-    if (totalRideCount === 0) {
-      return {
-        isOpen: false,
-        openRideCount: 0,
-        totalRideCount: 0,
-        operatingPercentage: 0,
-      };
-    }
+    const row = await this.queueTimeRepository
+      .createQueryBuilder()
+      .select('COUNT(*)', 'totalRideCount')
+      .addSelect(
+        'COUNT(*) FILTER (WHERE latest."isOpen" = true)',
+        'openRideCount',
+      )
+      .from('(' + latestSubQuery.getQuery() + ')', 'latest')
+      .setParameters(latestSubQuery.getParameters())
+      .getRawOne();
 
-    // Count rides that are currently open (have queue time data and isOpen = true)
-    const openRideCount = allRides.filter((ride) => {
-      const currentQueueTime = this.getCurrentQueueTime(ride);
-      return currentQueueTime && currentQueueTime.isOpen;
-    }).length;
-
-    const operatingPercentage = Math.round(
-      (openRideCount / totalRideCount) * 100,
-    );
-    const isOpen = operatingPercentage >= threshold;
+    const resultRow = row || { totalRideCount: '0', openRideCount: '0' };
+    const totalRideCount = parseInt(resultRow.totalRideCount, 10);
+    const openRideCount = parseInt(resultRow.openRideCount, 10);
+    const operatingPercentage =
+      totalRideCount > 0
+        ? Math.round((openRideCount / totalRideCount) * 100)
+        : 0;
 
     return {
-      isOpen,
+      isOpen: operatingPercentage >= threshold,
       openRideCount,
       totalRideCount,
       operatingPercentage,
+    };
+  }
+
+  /**
+   * Optimized version of calculateWaitTimeDistribution using direct SQL queries
+   */
+  async calculateWaitTimeDistributionFromDb(
+    parkId: number,
+  ): Promise<WaitTimeDistribution> {
+    const latestSubQuery = this.queueTimeRepository
+      .createQueryBuilder('qt')
+      .distinctOn(['qt."rideId"'])
+      .select('qt."rideId"', 'rideId')
+      .addSelect('qt."isOpen"', 'isOpen')
+      .addSelect('qt."waitTime"', 'waitTime')
+      .innerJoin(RideEntity, 'r', 'r.id = qt."rideId"')
+      .where('r."parkId" = :parkId', { parkId })
+      .orderBy('qt."rideId"')
+      .addOrderBy('qt."lastUpdated"', 'DESC')
+      .addOrderBy('qt."recordedAt"', 'DESC');
+
+    const row = await this.queueTimeRepository
+      .createQueryBuilder()
+      .select('COUNT(CASE WHEN latest."waitTime" <= 10 THEN 1 END)', '0-10')
+      .addSelect(
+        'COUNT(CASE WHEN latest."waitTime" > 10 AND latest."waitTime" <= 30 THEN 1 END)',
+        '11-30',
+      )
+      .addSelect(
+        'COUNT(CASE WHEN latest."waitTime" > 30 AND latest."waitTime" <= 60 THEN 1 END)',
+        '31-60',
+      )
+      .addSelect(
+        'COUNT(CASE WHEN latest."waitTime" > 60 AND latest."waitTime" <= 120 THEN 1 END)',
+        '61-120',
+      )
+      .addSelect('COUNT(CASE WHEN latest."waitTime" > 120 THEN 1 END)', '120+')
+      .from('(' + latestSubQuery.getQuery() + ')', 'latest')
+      .where('latest."isOpen" = true AND latest."waitTime" IS NOT NULL')
+      .setParameters(latestSubQuery.getParameters())
+      .getRawOne();
+
+    if (!row) {
+      return {
+        '0-10': 0,
+        '11-30': 0,
+        '31-60': 0,
+        '61-120': 0,
+        '120+': 0,
+      };
+    }
+
+    return {
+      '0-10': parseInt(row['0-10'], 10) || 0,
+      '11-30': parseInt(row['11-30'], 10) || 0,
+      '31-60': parseInt(row['31-60'], 10) || 0,
+      '61-120': parseInt(row['61-120'], 10) || 0,
+      '120+': parseInt(row['120+'], 10) || 0,
     };
   }
   /**
@@ -139,35 +217,9 @@ export class ParkUtilsService {
    * @param park Park object with themeAreas containing rides
    * @returns Wait time distribution object with counts for each time range
    */
-  calculateWaitTimeDistribution(park: Park): WaitTimeDistribution {
-    const waitTimeDistribution: WaitTimeDistribution = {
-      '0-10': 0,
-      '11-30': 0,
-      '31-60': 0,
-      '61-120': 0,
-      '120+': 0,
-    };
-
-    // Get all rides from all sources (theme areas + direct park rides)
-    const allRides = this.getAllRidesFromPark(park);
-
-    // Calculate wait time distribution
-    allRides.forEach((ride) => {
-      const currentQueueTime = this.getCurrentQueueTime(ride);
-      if (
-        currentQueueTime &&
-        currentQueueTime.isOpen &&
-        currentQueueTime.waitTime !== null
-      ) {
-        const waitTime = currentQueueTime.waitTime;
-        if (waitTime <= 10) waitTimeDistribution['0-10']++;
-        else if (waitTime <= 30) waitTimeDistribution['11-30']++;
-        else if (waitTime <= 60) waitTimeDistribution['31-60']++;
-        else if (waitTime <= 120) waitTimeDistribution['61-120']++;
-        else waitTimeDistribution['120+']++;
-      }
-    });
-
-    return waitTimeDistribution;
+  async calculateWaitTimeDistribution(
+    park: Park,
+  ): Promise<WaitTimeDistribution> {
+    return this.calculateWaitTimeDistributionFromDb(park.id);
   }
 }

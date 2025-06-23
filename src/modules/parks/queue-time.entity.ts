@@ -11,6 +11,7 @@ import { Ride } from './ride.entity.js';
 @Entity()
 @Index(['ride', 'lastUpdated']) // Optimizes the duplicate check query
 @Index(['ride', 'lastUpdated', 'waitTime']) // Additional index for full duplicate prevention
+@Index(['ride', 'lastUpdated', 'recordedAt']) // Optimizes fetching latest queue time for a ride
 export class QueueTime {
   @PrimaryGeneratedColumn()
   id: number;

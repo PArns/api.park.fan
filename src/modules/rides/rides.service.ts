@@ -14,14 +14,6 @@ export class RidesService {
   ) {}
 
   /**
-   * Helper function to extract current queue time from a ride
-   * @private
-   */
-  private getCurrentQueueTime(ride: any) {
-    return this.parkUtils.getCurrentQueueTime(ride);
-  }
-
-  /**
    * Get all rides with optional filtering
    */
   async findAll(query: RideQueryDto = {}) {
@@ -30,12 +22,7 @@ export class RidesService {
     const queryBuilder = this.rideRepository
       .createQueryBuilder('ride')
       .leftJoinAndSelect('ride.park', 'park')
-      .leftJoinAndSelect('ride.themeArea', 'themeArea')
-      .leftJoinAndSelect(
-        'ride.queueTimes',
-        'queueTimes',
-        'queueTimes.lastUpdated = (SELECT MAX(qt."lastUpdated") FROM queue_time qt WHERE qt."rideId" = ride.id)',
-      );
+      .leftJoinAndSelect('ride.themeArea', 'themeArea');
 
     // Apply filters
     if (search) {
@@ -51,6 +38,9 @@ export class RidesService {
     // Filter by active status (defaults to true)
     queryBuilder.andWhere('ride.isActive = :isActive', { isActive });
 
+    // Get total count before pagination
+    const totalCount = await queryBuilder.getCount();
+
     // Apply pagination
     const offset = (page - 1) * limit;
     queryBuilder.skip(offset).take(limit);
@@ -58,8 +48,39 @@ export class RidesService {
     // Order by name
     queryBuilder.orderBy('ride.name', 'ASC');
 
-    const totalCount = await queryBuilder.getCount();
     const rides = await queryBuilder.getMany();
+
+    const rideIds = rides.map((ride) => ride.id);
+    const queueTimeMap = new Map();
+
+    if (rideIds.length > 0) {
+      const latestQueueTimes = await this.rideRepository.query(
+        `
+        WITH latest_queue_times AS (
+          SELECT DISTINCT ON (qt."rideId")
+            qt."rideId",
+            qt.id,
+            qt."waitTime",
+            qt."isOpen",
+            qt."lastUpdated"
+          FROM queue_time qt
+          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
+          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+        )
+        SELECT * FROM latest_queue_times
+      `,
+        rideIds,
+      );
+
+      latestQueueTimes.forEach((qt) => {
+        queueTimeMap.set(qt.rideId, {
+          id: qt.id,
+          waitTime: qt.waitTime,
+          isOpen: qt.isOpen,
+          lastUpdated: qt.lastUpdated,
+        });
+      });
+    }
 
     // Transform the data to include current queue time
     const transformedRides = rides.map((ride) => ({
@@ -78,7 +99,7 @@ export class RidesService {
             name: ride.themeArea.name,
           }
         : null,
-      currentQueueTime: this.getCurrentQueueTime(ride),
+      currentQueueTime: queueTimeMap.get(ride.id) || null,
     }));
 
     return {
@@ -98,21 +119,21 @@ export class RidesService {
    * Get a specific ride by ID with current queue time only
    */
   async findOne(id: number) {
-    const ride = await this.rideRepository
-      .createQueryBuilder('ride')
-      .leftJoinAndSelect('ride.park', 'park')
-      .leftJoinAndSelect('ride.themeArea', 'themeArea')
-      .leftJoinAndSelect('ride.queueTimes', 'queueTimes')
-      .where('ride.id = :id', { id })
-      .orderBy('queueTimes.recordedAt', 'DESC')
-      .getOne();
+    const ride = await this.rideRepository.findOne({
+      where: { id },
+      relations: {
+        park: true,
+        themeArea: true,
+      },
+    });
 
     if (!ride) {
       throw new NotFoundException(`Ride with ID ${id} not found`);
     }
 
-    // Get the most recent queue time for this ride
-    const currentQueueTime = this.getCurrentQueueTime(ride);
+    const currentQueueTime = await this.parkUtils.getCurrentQueueTimeFromDb(
+      ride.id,
+    );
 
     return {
       id: ride.id,
