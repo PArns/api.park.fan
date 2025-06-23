@@ -5,6 +5,7 @@ import {
   ManyToOne,
   OneToMany,
   Unique,
+  Index,
 } from 'typeorm';
 import { Park } from './park.entity.js';
 import { ThemeArea } from './theme-area.entity.js';
@@ -12,6 +13,9 @@ import { QueueTime } from './queue-time.entity.js';
 
 @Entity()
 @Unique(['queueTimesId', 'park']) // Unique constraint on queueTimesId + park combination
+@Index('IDX_ride_park', ['park'])
+@Index('IDX_ride_theme_area', ['themeArea'])
+@Index('IDX_ride_is_active', ['isActive'])
 export class Ride {
   @PrimaryGeneratedColumn()
   id: number;

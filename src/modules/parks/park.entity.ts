@@ -17,6 +17,7 @@ import { Ride } from './ride.entity.js';
 @Index('IDX_park_name', ['name'])
 @Index('IDX_park_country_name', ['country', 'name'])
 @Index('IDX_park_continent_name', ['continent', 'name'])
+@Index('IDX_park_park_group', ['parkGroup'])
 export class Park {
   @PrimaryGeneratedColumn()
   id: number;

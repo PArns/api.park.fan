@@ -5,12 +5,14 @@ import {
   ManyToOne,
   OneToMany,
   Unique,
+  Index,
 } from 'typeorm';
 import { Park } from './park.entity.js';
 import { Ride } from './ride.entity.js';
 
 @Entity()
 @Unique(['queueTimesId', 'park'])
+@Index('IDX_theme_area_park', ['park'])
 export class ThemeArea {
   @PrimaryGeneratedColumn()
   id: number;

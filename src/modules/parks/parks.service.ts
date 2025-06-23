@@ -1,5 +1,4 @@
 import { Injectable, NotFoundException, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Park } from './park.entity.js';
@@ -7,6 +6,7 @@ import { ParkQueryDto } from './parks.dto.js';
 import { CrowdLevelService } from './crowd-level.service.js';
 import { WeatherService } from './weather.service.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
+import { CacheService } from '../utils/cache.service.js';
 
 @Injectable()
 export class ParksService {
@@ -18,27 +18,8 @@ export class ParksService {
     private readonly parkUtils: ParkUtilsService,
     private readonly crowdLevelService: CrowdLevelService,
     private readonly weatherService: WeatherService,
-    private readonly configService: ConfigService,
+    private readonly cacheService: CacheService,
   ) {}
-
-  private cache = new Map<string, { value: any; timestamp: number }>();
-
-  private get CACHE_TTL() {
-    const seconds = this.configService.get<number>('CACHE_TTL_SECONDS', 3600);
-    return Math.min(seconds, 300) * 1000;
-  }
-
-  private getCached(key: string): any | null {
-    const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
-      return cached.value;
-    }
-    return null;
-  }
-
-  private setCached(key: string, value: any): void {
-    this.cache.set(key, { value, timestamp: Date.now() });
-  }
 
   /**
    * Get the default park open threshold from configuration
@@ -327,7 +308,7 @@ export class ParksService {
   }
 
   /**
-   * Get all parks with optional filtering and pagination
+   * Get all parks with optional filtering and pagination - Optimized version
    */
   async findAll(query: ParkQueryDto = {}): Promise<{
     data: any[];
@@ -354,110 +335,237 @@ export class ParksService {
 
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
 
-    // Step 1: Get parks with minimal JOINs for faster querying
-    const queryBuilder = this.parkRepository
-      .createQueryBuilder('park')
-      .leftJoinAndSelect('park.parkGroup', 'parkGroup');
+    // Create cache key for the entire request
+    const cacheKey = `parks:findAll:${JSON.stringify({
+      search,
+      country,
+      continent,
+      parkGroupId,
+      page,
+      limit,
+      threshold,
+      includeCrowdLevel,
+      includeWeather,
+    })}`;
 
-    // Apply filters with optimized WHERE clauses
+    // Check cache first
+    const cached = this.cacheService.get<{
+      data: any[];
+      pagination: {
+        page: number;
+        limit: number;
+        totalCount: number;
+        totalPages: number;
+        hasNext: boolean;
+        hasPrev: boolean;
+      };
+    }>(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Build count query separately for better performance
+    const countQueryBuilder = this.parkRepository.createQueryBuilder('park');
+
+    // Apply filters to count query
     if (search) {
-      // Use ILIKE for case-insensitive search (works better with indexes)
-      queryBuilder.andWhere(
+      countQueryBuilder.andWhere(
         '(park.name ILIKE :search OR park.country ILIKE :search)',
         { search: `%${search}%` },
       );
     }
-
     if (country) {
-      queryBuilder.andWhere('park.country = :country', { country });
+      countQueryBuilder.andWhere('park.country = :country', { country });
     }
-
     if (continent) {
-      queryBuilder.andWhere('park.continent = :continent', { continent });
+      countQueryBuilder.andWhere('park.continent = :continent', { continent });
     }
-
     if (parkGroupId) {
-      queryBuilder.andWhere('park.parkGroup.id = :parkGroupId', {
+      countQueryBuilder.andWhere('park.parkGroup.id = :parkGroupId', {
         parkGroupId,
       });
     }
 
-    // Apply pagination
-    const offset = (page - 1) * limit;
-    queryBuilder.skip(offset).take(limit);
+    // Get total count
+    const totalCount = await countQueryBuilder.getCount();
 
-    // Order by name
-    queryBuilder.orderBy('park.name', 'ASC');
-
-    // Get total count for pagination (separate optimized query)
-    const totalCount = await queryBuilder.getCount();
-
-    // Get parks
-    const parks = await queryBuilder.getMany();
-
-    if (parks.length === 0) {
-      return {
+    if (totalCount === 0) {
+      const emptyResult = {
         data: [],
         pagination: {
           page,
           limit,
-          totalCount,
-          totalPages: Math.ceil(totalCount / limit),
-          hasNext: page * limit < totalCount,
-          hasPrev: page > 1,
+          totalCount: 0,
+          totalPages: 0,
+          hasNext: false,
+          hasPrev: false,
         },
       };
+      this.cacheService.set(cacheKey, emptyResult); // Use default TTL
+      return emptyResult;
     }
 
-    const parkIds = parks.map((park) => park.id);
+    // Optimized main query using raw SQL for better performance
+    const offset = (page - 1) * limit;
 
-    // Step 2: Load theme areas and rides separately for better performance
-    const themeAreas = await this.parkRepository
-      .createQueryBuilder('park')
-      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
-      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
-      .where('park.id IN (:...parkIds)', { parkIds })
-      .getMany();
+    let whereConditions = [];
+    let queryParams: any[] = [];
+    let paramIndex = 1;
 
-    // Step 3: Load direct park rides
-    const parkRides = await this.parkRepository
-      .createQueryBuilder('park')
-      .leftJoinAndSelect('park.rides', 'rides')
-      .where('park.id IN (:...parkIds)', { parkIds })
-      .getMany();
+    if (search) {
+      whereConditions.push(
+        `(p.name ILIKE $${paramIndex} OR p.country ILIKE $${paramIndex})`,
+      );
+      queryParams.push(`%${search}%`);
+      paramIndex++;
+    }
+    if (country) {
+      whereConditions.push(`p.country = $${paramIndex}`);
+      queryParams.push(country);
+      paramIndex++;
+    }
+    if (continent) {
+      whereConditions.push(`p.continent = $${paramIndex}`);
+      queryParams.push(continent);
+      paramIndex++;
+    }
+    if (parkGroupId) {
+      whereConditions.push(`p."parkGroupId" = $${paramIndex}`);
+      queryParams.push(parkGroupId);
+      paramIndex++;
+    }
 
-    // Step 4: Merge the data
-    const themeAreaMap = new Map();
-    const parkRidesMap = new Map();
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(' AND ')}`
+        : '';
 
-    themeAreas.forEach((park) => {
-      themeAreaMap.set(park.id, park.themeAreas || []);
+    // Add pagination parameters
+    queryParams.push(limit, offset);
+    const limitParam = paramIndex;
+    const offsetParam = paramIndex + 1;
+
+    // Single optimized query to get parks with all related data - queue times loaded separately
+    const parksQuery = `
+      SELECT 
+        p.id as park_id,
+        p."queueTimesId" as park_queue_times_id,
+        p.name as park_name,
+        p.country as park_country,
+        p.continent as park_continent,
+        p.latitude as park_latitude,
+        p.longitude as park_longitude,
+        p.timezone as park_timezone,
+        pg.id as park_group_id,
+        pg.name as park_group_name,
+        pg."queueTimesId" as park_group_queue_times_id,
+        ta.id as theme_area_id,
+        ta."queueTimesId" as theme_area_queue_times_id,
+        ta.name as theme_area_name,
+        r.id as ride_id,
+        r."queueTimesId" as ride_queue_times_id,
+        r.name as ride_name,
+        r."isActive" as ride_is_active,
+        r."themeAreaId" as ride_theme_area_id,
+        r."parkId" as ride_park_id
+      FROM park p
+      LEFT JOIN park_group pg ON p."parkGroupId" = pg.id
+      LEFT JOIN theme_area ta ON ta."parkId" = p.id
+      LEFT JOIN ride r ON (r."themeAreaId" = ta.id OR r."parkId" = p.id)
+      ${whereClause}
+      ORDER BY p.name ASC, ta.name ASC, r.name ASC
+      LIMIT $${limitParam} OFFSET $${offsetParam}
+    `;
+
+    const rawResults = await this.parkRepository.query(parksQuery, queryParams);
+
+    // Transform raw results into structured park data
+    const parksMap = new Map();
+
+    rawResults.forEach((row: any) => {
+      const parkId = row.park_id;
+
+      if (!parksMap.has(parkId)) {
+        parksMap.set(parkId, {
+          id: parkId,
+          queueTimesId: row.park_queue_times_id,
+          name: row.park_name,
+          country: row.park_country,
+          continent: row.park_continent,
+          latitude: row.park_latitude,
+          longitude: row.park_longitude,
+          timezone: row.park_timezone,
+          parkGroup: row.park_group_id
+            ? {
+                id: row.park_group_id,
+                name: row.park_group_name,
+                queueTimesId: row.park_group_queue_times_id,
+              }
+            : null,
+          themeAreas: new Map(),
+          rides: new Map(),
+          allRideIds: new Set(), // Collect all ride IDs for batch queue time loading
+        });
+      }
+
+      const park = parksMap.get(parkId);
+
+      // Handle theme areas and rides
+      if (row.ride_id) {
+        const ride = {
+          id: row.ride_id,
+          queueTimesId: row.ride_queue_times_id,
+          name: row.ride_name,
+          isActive: row.ride_is_active,
+          queueTimes: [], // Will be populated separately
+        };
+
+        // Add ride ID to the set for batch loading
+        park.allRideIds.add(row.ride_id);
+
+        if (row.ride_theme_area_id && row.theme_area_id) {
+          // Ride belongs to a theme area
+          if (!park.themeAreas.has(row.theme_area_id)) {
+            park.themeAreas.set(row.theme_area_id, {
+              id: row.theme_area_id,
+              queueTimesId: row.theme_area_queue_times_id,
+              name: row.theme_area_name,
+              rides: [],
+            });
+          }
+          park.themeAreas.get(row.theme_area_id).rides.push(ride);
+        } else if (row.ride_park_id === parkId) {
+          // Direct park ride
+          park.rides.set(row.ride_id, ride);
+        }
+      } else if (row.theme_area_id && !park.themeAreas.has(row.theme_area_id)) {
+        // Theme area without rides
+        park.themeAreas.set(row.theme_area_id, {
+          id: row.theme_area_id,
+          queueTimesId: row.theme_area_queue_times_id,
+          name: row.theme_area_name,
+          rides: [],
+        });
+      }
     });
 
-    parkRides.forEach((park) => {
-      parkRidesMap.set(park.id, park.rides || []);
-    });
+    // Batch load latest queue times for all rides
+    const allRideIds = Array.from(
+      new Set(
+        Array.from(parksMap.values()).flatMap((park) =>
+          Array.from(park.allRideIds),
+        ),
+      ),
+    );
 
-    parks.forEach((park) => {
-      park.themeAreas = themeAreaMap.get(park.id) || [];
-      park.rides = parkRidesMap.get(park.id) || [];
-    });
-
-    // Step 5: Optimized queue times loading
-    const allRides = parks.flatMap((park) => [
-      ...park.rides,
-      ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
-    ]);
-
-    if (allRides.length > 0) {
-      const rideIds = allRides.map((ride) => ride.id);
-
-      // Use optimized query with proper indexing
+    let queueTimeMap = new Map();
+    if (allRideIds.length > 0) {
+      // Use optimized query to get ONLY the latest queue time for each ride
       const latestQueueTimes = await this.parkRepository.query(
         `
         SELECT DISTINCT ON (qt."rideId") 
           qt."rideId",
-          qt.id,
+          qt.id as queue_time_id,
           qt."waitTime",
           qt."isOpen",
           qt."lastUpdated",
@@ -466,15 +574,14 @@ export class ParksService {
         WHERE qt."rideId" = ANY($1)
         ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
       `,
-        [rideIds],
+        [allRideIds],
       );
 
-      // Create queue time map
-      const queueTimeMap = new Map();
+      // Create lookup map
       latestQueueTimes.forEach((qt) => {
         queueTimeMap.set(qt.rideId, [
           {
-            id: qt.id,
+            id: qt.queue_time_id,
             waitTime: qt.waitTime,
             isOpen: qt.isOpen,
             lastUpdated: qt.lastUpdated,
@@ -482,25 +589,40 @@ export class ParksService {
           },
         ]);
       });
-
-      // Attach queue times
-      parks.forEach((park) => {
-        park.rides.forEach((ride) => {
-          ride.queueTimes = queueTimeMap.get(ride.id) || [];
-        });
-
-        park.themeAreas?.forEach((themeArea) => {
-          themeArea.rides?.forEach((ride) => {
-            ride.queueTimes = queueTimeMap.get(ride.id) || [];
-          });
-        });
-      });
     }
 
-    // Step 6: Batch weather data loading
+    // Convert Maps to Arrays and apply queue times to rides
+    const parks = Array.from(parksMap.values()).map((park) => {
+      // Apply queue times to theme area rides
+      const themeAreas = Array.from(park.themeAreas.values()).map(
+        (themeArea: any) => ({
+          ...themeArea,
+          rides: themeArea.rides.map((ride: any) => ({
+            ...ride,
+            queueTimes: queueTimeMap.get(ride.id) || [],
+          })),
+        }),
+      );
+
+      // Apply queue times to direct park rides
+      const rides = Array.from(park.rides.values()).map((ride: any) => ({
+        ...ride,
+        queueTimes: queueTimeMap.get(ride.id) || [],
+      }));
+
+      return {
+        ...park,
+        themeAreas,
+        rides,
+        allRideIds: undefined, // Remove helper property
+      };
+    });
+
+    // Batch weather data loading if needed
     let weatherDataMap = new Map<number, any>();
-    if (includeWeather) {
+    if (includeWeather && parks.length > 0) {
       try {
+        const parkIds = parks.map((p) => p.id);
         weatherDataMap =
           await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
       } catch (error) {
@@ -508,7 +630,7 @@ export class ParksService {
       }
     }
 
-    // Step 7: Transform data
+    // Transform parks with weather data and crowd levels
     const transformedParks = await Promise.all(
       parks.map((park) =>
         this.transformParkWithWeatherData(
@@ -521,7 +643,7 @@ export class ParksService {
       ),
     );
 
-    return {
+    const result = {
       data: transformedParks,
       pagination: {
         page,
@@ -532,9 +654,13 @@ export class ParksService {
         hasPrev: page > 1,
       },
     };
+
+    // Cache the result using default TTL
+    this.cacheService.set(cacheKey, result);
+    return result;
   }
   /**
-   * Get a single park by ID
+   * Get a single park by ID - Optimized version
    */
   async findOne(
     id: number,
@@ -542,53 +668,146 @@ export class ParksService {
     includeCrowdLevel: boolean = true,
     includeWeather: boolean = true,
   ): Promise<any> {
-    const park = await this.parkRepository
-      .createQueryBuilder('park')
-      .leftJoinAndSelect('park.parkGroup', 'parkGroup')
-      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
-      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
-      .leftJoinAndSelect('park.rides', 'rides')
-      .where('park.id = :id', { id })
-      .getOne();
-    if (!park) {
+    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
+
+    // Create cache key
+    const cacheKey = `park:findOne:${id}:${JSON.stringify({
+      threshold,
+      includeCrowdLevel,
+      includeWeather,
+    })}`;
+
+    // Check cache first
+    const cached = this.cacheService.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Optimized single query to get park with all related data - queue times loaded separately
+    const parkQuery = `
+      SELECT 
+        p.id as park_id,
+        p."queueTimesId" as park_queue_times_id,
+        p.name as park_name,
+        p.country as park_country,
+        p.continent as park_continent,
+        p.latitude as park_latitude,
+        p.longitude as park_longitude,
+        p.timezone as park_timezone,
+        pg.id as park_group_id,
+        pg.name as park_group_name,
+        pg."queueTimesId" as park_group_queue_times_id,
+        ta.id as theme_area_id,
+        ta."queueTimesId" as theme_area_queue_times_id,
+        ta.name as theme_area_name,
+        r.id as ride_id,
+        r."queueTimesId" as ride_queue_times_id,
+        r.name as ride_name,
+        r."isActive" as ride_is_active,
+        r."themeAreaId" as ride_theme_area_id,
+        r."parkId" as ride_park_id
+      FROM park p
+      LEFT JOIN park_group pg ON p."parkGroupId" = pg.id
+      LEFT JOIN theme_area ta ON ta."parkId" = p.id
+      LEFT JOIN ride r ON (r."themeAreaId" = ta.id OR r."parkId" = p.id)
+      WHERE p.id = $1
+      ORDER BY ta.name ASC, r.name ASC
+    `;
+
+    const rawResults = await this.parkRepository.query(parkQuery, [id]);
+
+    if (rawResults.length === 0) {
       throw new NotFoundException(`Park with ID ${id} not found`);
     }
 
-    // Load only the latest queue time for each ride to avoid memory overflow
-    const allRides = [
-      ...park.rides,
-      ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
-    ];
+    // Transform raw results into structured park data
+    const firstRow = rawResults[0];
+    const park = {
+      id: firstRow.park_id,
+      queueTimesId: firstRow.park_queue_times_id,
+      name: firstRow.park_name,
+      country: firstRow.park_country,
+      continent: firstRow.park_continent,
+      latitude: firstRow.park_latitude,
+      longitude: firstRow.park_longitude,
+      timezone: firstRow.park_timezone,
+      parkGroup: firstRow.park_group_id
+        ? {
+            id: firstRow.park_group_id,
+            name: firstRow.park_group_name,
+            queueTimesId: firstRow.park_group_queue_times_id,
+          }
+        : null,
+      themeAreas: new Map(),
+      rides: new Map(),
+    };
 
-    if (allRides.length > 0) {
-      const rideIds = allRides.map((ride) => ride.id);
+    const allRideIds = new Set<number>();
 
-      // Get only the most recent queue time for each ride using efficient query
+    // Process all rows to build theme areas and rides
+    rawResults.forEach((row: any) => {
+      if (row.ride_id) {
+        const ride = {
+          id: row.ride_id,
+          queueTimesId: row.ride_queue_times_id,
+          name: row.ride_name,
+          isActive: row.ride_is_active,
+          queueTimes: [], // Will be populated separately
+        };
+
+        allRideIds.add(row.ride_id);
+
+        if (row.ride_theme_area_id && row.theme_area_id) {
+          // Ride belongs to a theme area
+          if (!park.themeAreas.has(row.theme_area_id)) {
+            park.themeAreas.set(row.theme_area_id, {
+              id: row.theme_area_id,
+              queueTimesId: row.theme_area_queue_times_id,
+              name: row.theme_area_name,
+              rides: [],
+            });
+          }
+          park.themeAreas.get(row.theme_area_id).rides.push(ride);
+        } else if (row.ride_park_id === park.id) {
+          // Direct park ride
+          park.rides.set(row.ride_id, ride);
+        }
+      } else if (row.theme_area_id && !park.themeAreas.has(row.theme_area_id)) {
+        // Theme area without rides
+        park.themeAreas.set(row.theme_area_id, {
+          id: row.theme_area_id,
+          queueTimesId: row.theme_area_queue_times_id,
+          name: row.theme_area_name,
+          rides: [],
+        });
+      }
+    });
+
+    // Batch load latest queue times for all rides in this park
+    let queueTimeMap = new Map();
+    if (allRideIds.size > 0) {
+      const rideIdsArray = Array.from(allRideIds);
       const latestQueueTimes = await this.parkRepository.query(
         `
-        WITH latest_queue_times AS (
-          SELECT DISTINCT ON (qt."rideId") 
-            qt."rideId",
-            qt.id,
-            qt."waitTime",
-            qt."isOpen",
-            qt."lastUpdated",
-            qt."recordedAt"
-          FROM queue_time qt
-          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
-          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
-        )
-        SELECT * FROM latest_queue_times
+        SELECT DISTINCT ON (qt."rideId") 
+          qt."rideId",
+          qt.id as queue_time_id,
+          qt."waitTime",
+          qt."isOpen",
+          qt."lastUpdated",
+          qt."recordedAt"
+        FROM queue_time qt
+        WHERE qt."rideId" = ANY($1)
+        ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
       `,
-        rideIds,
+        [rideIdsArray],
       );
 
-      // Create a map for quick lookup
-      const queueTimeMap = new Map();
+      // Create lookup map
       latestQueueTimes.forEach((qt) => {
         queueTimeMap.set(qt.rideId, [
           {
-            id: qt.id,
+            id: qt.queue_time_id,
             waitTime: qt.waitTime,
             isOpen: qt.isOpen,
             lastUpdated: qt.lastUpdated,
@@ -596,44 +815,52 @@ export class ParksService {
           },
         ]);
       });
-
-      // Attach the latest queue times to rides
-      park.rides.forEach((ride) => {
-        ride.queueTimes = queueTimeMap.get(ride.id) || [];
-      });
-
-      park.themeAreas?.forEach((themeArea) => {
-        themeArea.rides?.forEach((ride) => {
-          ride.queueTimes = queueTimeMap.get(ride.id) || [];
-        });
-      });
     }
 
-    // For single park, we can still use the optimized method with a single-item map
+    // Convert Maps to Arrays and apply queue times to rides
+    const finalPark = {
+      ...park,
+      themeAreas: Array.from(park.themeAreas.values()).map(
+        (themeArea: any) => ({
+          ...themeArea,
+          rides: themeArea.rides.map((ride: any) => ({
+            ...ride,
+            queueTimes: queueTimeMap.get(ride.id) || [],
+          })),
+        }),
+      ),
+      rides: Array.from(park.rides.values()).map((ride: any) => ({
+        ...ride,
+        queueTimes: queueTimeMap.get(ride.id) || [],
+      })),
+    };
+
+    // Batch weather data loading if needed
     let weatherDataMap = new Map<number, any>();
     if (includeWeather) {
       try {
-        const parkIds = [park.id];
-
         weatherDataMap =
-          await this.weatherService.getBatchCompleteWeatherForParks(parkIds);
+          await this.weatherService.getBatchCompleteWeatherForParks([park.id]);
       } catch (error) {
         this.logger.warn(
           'Error retrieving weather data for single park:',
           error,
         );
-        // Continue without weather data if fails
       }
     }
 
-    // Transform the data using helper functions
-    return await this.transformParkWithWeatherData(
-      park,
+    // Transform the data using helper function
+    const result = await this.transformParkWithWeatherData(
+      finalPark,
       weatherDataMap,
-      openThreshold,
+      threshold,
       includeCrowdLevel,
       includeWeather,
     );
+
+    // Cache the result using default TTL
+    this.cacheService.set(cacheKey, result);
+    return result;
   }
 
   /**
@@ -772,7 +999,7 @@ export class ParksService {
     query: ParkQueryDto = {},
   ): Promise<any> {
     const cacheKey = `continent:${continentSlug}:${JSON.stringify(query)}`;
-    const cached = this.getCached(cacheKey);
+    const cached = this.cacheService.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -829,7 +1056,7 @@ export class ParksService {
       },
     };
 
-    this.setCached(cacheKey, payload);
+    this.cacheService.set(cacheKey, payload); // Use default TTL
     return payload;
   }
 
@@ -841,7 +1068,7 @@ export class ParksService {
     query: ParkQueryDto = {},
   ): Promise<any> {
     const cacheKey = `country:${countrySlug}:${JSON.stringify(query)}`;
-    const cached = this.getCached(cacheKey);
+    const cached = this.cacheService.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -899,7 +1126,7 @@ export class ParksService {
       },
     };
 
-    this.setCached(cacheKey, payload);
+    this.cacheService.set(cacheKey, payload); // Use default TTL
     return payload;
   }
 
@@ -911,7 +1138,7 @@ export class ParksService {
     parkSlug: string,
   ): Promise<any | null> {
     const cacheKey = `park:${countrySlug}:${parkSlug}`;
-    const cached = this.getCached(cacheKey);
+    const cached = this.cacheService.get(cacheKey);
     if (cached) {
       return cached;
     }
@@ -1004,7 +1231,7 @@ export class ParksService {
       true,
     );
 
-    this.setCached(cacheKey, transformed);
+    this.cacheService.set(cacheKey, transformed); // Use default TTL
     return transformed;
   }
 
