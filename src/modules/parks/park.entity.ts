@@ -11,9 +11,10 @@ import { ThemeArea } from './theme-area.entity';
 import { Ride } from './ride.entity';
 
 @Entity()
-@Index('IDX_PARK_NAME')
-@Index('IDX_PARK_COUNTRY')
-@Index('IDX_PARK_CONTINENT')
+// Individual indexes to speed up lookups by park attributes
+@Index('IDX_PARK_NAME', ['name'])
+@Index('IDX_PARK_COUNTRY', ['country'])
+@Index('IDX_PARK_CONTINENT', ['continent'])
 @Index('IDX_PARK_QUEUE_TIMES_ID', ['queueTimesId'])
 @Index('IDX_PARK_CONT_COUNTRY_NAME', ['continent', 'country', 'name'])
 export class Park {

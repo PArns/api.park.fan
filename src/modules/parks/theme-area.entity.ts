@@ -12,7 +12,8 @@ import { Ride } from './ride.entity';
 
 @Entity()
 @Unique(['queueTimesId', 'park'])
-@Index('IDX_THEME_AREA_NAME')
+// Index on theme area name for quick filtering
+@Index('IDX_THEME_AREA_NAME', ['name'])
 @Index('IDX_THEME_AREA_PARK_NAME', ['park', 'name'])
 export class ThemeArea {
   @PrimaryGeneratedColumn()
