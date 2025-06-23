@@ -8,5 +8,6 @@ import { Park } from '../parks/park.entity.js';
   imports: [TypeOrmModule.forFeature([Park])],
   controllers: [CountriesController],
   providers: [CountriesService],
+  exports: [CountriesService],
 })
 export class CountriesModule {}

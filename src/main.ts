@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Client } from 'pg';
 
 async function createDatabaseIfNotExists() {
@@ -79,15 +80,15 @@ async function bootstrap(): Promise<void> {
   const { CacheControlInterceptor } = await import(
     './modules/utils/cache-control.interceptor.js'
   );
+  const configService = app.get(ConfigService);
 
   // Register the cache interceptor globally
-  app.useGlobalInterceptors(new CacheControlInterceptor());
+  app.useGlobalInterceptors(new CacheControlInterceptor(configService));
 
   // Log that cache headers are enabled
   const logger = new Logger('Bootstrap');
-  logger.log(
-    'Cache-Control headers enabled with TTL of 300 seconds (5 minutes)',
-  );
+  const ttl = configService.get('CACHE_TTL_SECONDS', 3600);
+  logger.log(`Cache-Control headers enabled with TTL of ${ttl} seconds`);
   logger.log('Global validation pipe enabled with transformation');
 
   await app.listen(port);

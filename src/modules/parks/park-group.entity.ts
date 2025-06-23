@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany } from 'typeorm';
-import { Park } from './park.entity.js';
+import { Park } from './park.entity';
 
 @Entity()
 export class ParkGroup {

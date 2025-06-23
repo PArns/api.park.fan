@@ -17,6 +17,8 @@ import { WEATHER_CACHE_SERVICE } from './weather-cache.interface.js';
 import { QueueTimesParserService } from '../queue-times-parser/queue-times-parser.service';
 import { RidesService } from '../rides/rides.service';
 import { UtilsModule } from '../utils/utils.module';
+import { CountriesModule } from '../countries/countries.module.js';
+import { ContinentsModule } from '../continents/continents.module.js';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { UtilsModule } from '../utils/utils.module';
     ]),
     ScheduleModule.forRoot(),
     UtilsModule,
+    CountriesModule,
+    ContinentsModule,
   ],
   controllers: [ParksController],
   providers: [
