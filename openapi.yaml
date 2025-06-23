@@ -17,7 +17,7 @@ info:
     - **Type-Safe API**: Proper parameter validation and type conversion
     - **Comprehensive Coverage**: Theme parks worldwide with detailed ride information
 
-    ## � Smart Park Status Logic
+    ## 🎯 Smart Park Status Logic
 
     Parks are dynamically classified as "open" or "closed" based on operational rides:
     - **Threshold-based**: Parks with ≥X% operational rides are "open" (default: 50%)
