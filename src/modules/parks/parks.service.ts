@@ -565,8 +565,7 @@ export class ParksService {
     );
 
     let queueTimeMap = new Map();
-    // TODO: Re-enable queue time loading when more performance improvements are made
-    /*if (allRideIds.length > 0) {
+    if (allRideIds.length > 0) {
       // Use optimized query to get ONLY the latest queue time for each ride
       const latestQueueTimes = await this.parkRepository.query(
         `
@@ -596,7 +595,7 @@ export class ParksService {
           },
         ]);
       });
-    }*/
+    }
 
     // Convert Maps to Arrays and apply queue times to rides
     const parks = Array.from(parksMap.values()).map((park) => {
@@ -791,9 +790,8 @@ export class ParksService {
     });
 
     // Batch load latest queue times for all rides in this park
-    // TODO: Re-enable queue time loading when more performance improvements are made
     let queueTimeMap = new Map();
-    /*if (allRideIds.size > 0) {
+    if (allRideIds.size > 0) {
       const rideIdsArray = Array.from(allRideIds);
       const latestQueueTimes = await this.parkRepository.query(
         `
@@ -823,7 +821,7 @@ export class ParksService {
           },
         ]);
       });
-    }*/
+    }
 
     // Convert Maps to Arrays and apply queue times to rides
     const finalPark = {
