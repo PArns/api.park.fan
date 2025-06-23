@@ -176,28 +176,31 @@ export class ParkUtilsService {
   ): Promise<ParkOperatingStatus> {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
 
-    const result = await this.queueTimeRepository.query(
-      `
-      WITH latest AS (
-        SELECT DISTINCT ON (qt."rideId")
-          qt."rideId",
-          qt."isOpen"
-        FROM queue_time qt
-        JOIN ride r ON r.id = qt."rideId"
-        WHERE r."parkId" = $1
-        ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
-      )
-      SELECT
-        COUNT(*) AS "totalRideCount",
-        COUNT(*) FILTER (WHERE latest."isOpen" = true) AS "openRideCount"
-      FROM latest
-    `,
-      [parkId],
-    );
+    const latestSubQuery = this.queueTimeRepository
+      .createQueryBuilder('qt')
+      .distinctOn(['qt."rideId"'])
+      .select('qt."rideId"', 'rideId')
+      .addSelect('qt."isOpen"', 'isOpen')
+      .innerJoin(RideEntity, 'r', 'r.id = qt."rideId"')
+      .where('r."parkId" = :parkId', { parkId })
+      .orderBy('qt."rideId"')
+      .addOrderBy('qt."lastUpdated"', 'DESC')
+      .addOrderBy('qt."recordedAt"', 'DESC');
 
-    const row = result[0] || { totalRideCount: '0', openRideCount: '0' };
-    const totalRideCount = parseInt(row.totalRideCount, 10);
-    const openRideCount = parseInt(row.openRideCount, 10);
+    const row = await this.queueTimeRepository
+      .createQueryBuilder()
+      .select('COUNT(*)', 'totalRideCount')
+      .addSelect(
+        'COUNT(*) FILTER (WHERE latest."isOpen" = true)',
+        'openRideCount',
+      )
+      .from('(' + latestSubQuery.getQuery() + ')', 'latest')
+      .setParameters(latestSubQuery.getParameters())
+      .getRawOne();
+
+    const resultRow = row || { totalRideCount: '0', openRideCount: '0' };
+    const totalRideCount = parseInt(resultRow.totalRideCount, 10);
+    const openRideCount = parseInt(resultRow.openRideCount, 10);
     const operatingPercentage =
       totalRideCount > 0
         ? Math.round((openRideCount / totalRideCount) * 100)
