@@ -105,13 +105,13 @@ export class RidesService {
         themeArea: true,
       },
     });
-
     if (!ride) {
       throw new NotFoundException(`Ride with ID ${id} not found`);
     }
 
     const currentQueueTime = await this.parkUtils.getCurrentQueueTimeFromDb(
       ride.id,
+    );
     );
 
     return {
