@@ -667,8 +667,8 @@ export class QueueTimesParserService {
       for (const [rideId, queueTimeData] of queueTimesMap) {
         const cacheKey = `latest_queue_time_${rideId}`;
         
-        // Cache for 1 hour - this will be refreshed when new data comes in
-        promises.push(this.cacheService.setAsync(cacheKey, queueTimeData, 3600));
+        // Cache for 7 days - queue time data should persist longer to avoid data loss
+        promises.push(this.cacheService.setAsync(cacheKey, queueTimeData, 7 * 24 * 3600));
       }
       
       await Promise.all(promises);

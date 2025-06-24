@@ -22,8 +22,8 @@ export class CacheService implements ICacheService, OnModuleDestroy {
     this.config = {
       defaultTtl: this.configService.get<number>(
         'CACHE_DEFAULT_TTL',
-        5 * 60 * 1000,
-      ), // 5 minutes
+        24 * 60 * 60 * 1000,
+      ), // 24 hours (longer for queue time data)
       maxSize: this.configService.get<number>('CACHE_MAX_SIZE', 10000),
       cleanupInterval: this.configService.get<number>(
         'CACHE_CLEANUP_INTERVAL',
@@ -68,9 +68,8 @@ export class CacheService implements ICacheService, OnModuleDestroy {
    * Get value from cache
    */
   get<T>(key: string): T | null {
-    // For backward compatibility with sync interface, we return null and log
+    // For backward compatibility with sync interface, we return null
     // Users should use getAsync for Redis operations
-    this.logger.debug(`Sync get called for key ${key}, consider using getAsync`);
     this.stats.misses++;
     return null;
   }
@@ -109,8 +108,6 @@ export class CacheService implements ICacheService, OnModuleDestroy {
       } else {
         this.redis.set(key, serializedValue);
       }
-      
-      this.logger.debug(`Set cache key ${key} with TTL ${ttl}s`);
     } catch (error) {
       this.logger.error(`Error setting cache key ${key}:`, error);
     }
@@ -129,8 +126,6 @@ export class CacheService implements ICacheService, OnModuleDestroy {
       } else {
         await this.redis.set(key, serializedValue);
       }
-      
-      this.logger.debug(`Set cache key ${key} with TTL ${ttl}s`);
     } catch (error) {
       this.logger.error(`Error setting cache key ${key}:`, error);
     }
@@ -200,7 +195,6 @@ export class CacheService implements ICacheService, OnModuleDestroy {
    */
   has(key: string): boolean {
     // For backward compatibility with sync interface
-    this.logger.debug(`Sync has called for key ${key}, consider using hasAsync`);
     return false;
   }
 
@@ -222,7 +216,6 @@ export class CacheService implements ICacheService, OnModuleDestroy {
    */
   size(): number {
     // For backward compatibility with sync interface
-    this.logger.debug(`Sync size called, consider using sizeAsync`);
     return 0;
   }
 
