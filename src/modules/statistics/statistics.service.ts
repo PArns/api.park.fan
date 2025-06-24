@@ -1,16 +1,16 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import { Park } from '../parks/park.entity.js';
 import { ThemeArea } from '../parks/theme-area.entity.js';
 import { Ride } from '../parks/ride.entity.js';
-import { RidesService } from '../rides/rides.service.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
+import { RidesService } from '../rides/rides.service.js';
 import { QueueTime } from '../utils/park-utils.types.js';
 
 @Injectable()
 export class StatisticsService {
+  private readonly logger = new Logger(StatisticsService.name);
   private currentQueueTimesMap: Map<number, QueueTime> = new Map();
 
   constructor(
@@ -20,8 +20,8 @@ export class StatisticsService {
     private readonly themeAreaRepository: Repository<ThemeArea>,
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
-    private readonly ridesService: RidesService,
     private readonly parkUtils: ParkUtilsService,
+    private readonly ridesService: RidesService,
   ) {}
 
   /**
@@ -59,63 +59,78 @@ export class StatisticsService {
    * Get comprehensive statistics
    */
   async getStatistics(openThreshold?: number) {
+    const startTime = Date.now();
+    this.logger.warn('🕐 [TIMING] getStatistics - START');
+
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
+    
+    // Database counts timing
+    const dbCountsStart = Date.now();
     const totalParks = await this.parkRepository.count();
     const totalThemeAreas = await this.themeAreaRepository.count();
     const totalRides = await this.rideRepository.count();
+    this.logger.warn(`🕐 [TIMING] DB counts took ${Date.now() - dbCountsStart}ms`);
 
-    // Get all parks with their rides
+    // Parks loading timing
+    const parksLoadStart = Date.now();
     const allParks = await this.parkRepository.find({
       relations: ['themeAreas', 'themeAreas.rides', 'rides'],
     });
+    this.logger.warn(`🕐 [TIMING] Parks loading (${allParks.length} parks) took ${Date.now() - parksLoadStart}ms`);
 
+    // Ride IDs extraction timing
+    const rideIdsStart = Date.now();
     const allRideIds = allParks
       .flatMap((p) => this.parkUtils.getAllRidesFromPark(p as any))
       .map((r) => r.id);
+    this.logger.warn(`🕐 [TIMING] Ride IDs extraction (${allRideIds.length} rides) took ${Date.now() - rideIdsStart}ms`);
 
-    // Get latest queue times for all rides using optimized batch operation
-    const queueTimesMap = allRideIds.length > 0 
-      ? await this.ridesService.getLatestQueueTimesForRides(allRideIds)
+    // Queue times loading timing (from cache instead of database)
+    const queueTimesStart = Date.now();
+    this.currentQueueTimesMap = allRideIds.length > 0 
+      ? await this.getLatestQueueTimesFromCache(allRideIds)
       : new Map();
+    this.logger.warn(`🕐 [TIMING] Queue times loading from cache (${this.currentQueueTimesMap.size} entries) took ${Date.now() - queueTimesStart}ms`);
 
-    // Convert entity map to plain object map and store it for other methods
-    this.currentQueueTimesMap = new Map<number, QueueTime>();
-    queueTimesMap.forEach((queueTimeEntity, rideId) => {
-      this.currentQueueTimesMap.set(rideId, {
-        waitTime: queueTimeEntity.waitTime,
-        isOpen: queueTimeEntity.isOpen,
-        lastUpdated: queueTimeEntity.lastUpdated,
-      });
-    });
-
-    // Calculate park operating status
+    // Park status calculation timing
+    const parkStatusStart = Date.now();
     const openParks = allParks.filter((park) =>
       this.calculateParkOpenStatus(park, this.currentQueueTimesMap, threshold),
     );
     const openParksCount = openParks.length;
     const closedParksCount = totalParks - openParksCount;
+    this.logger.warn(`🕐 [TIMING] Park status calculation took ${Date.now() - parkStatusStart}ms`);
 
-    // Calculate park operating status by continent
+    // Continent stats timing
+    const continentStatsStart = Date.now();
     const parksByContinent = this.calculateParkOperatingByContinent(
       allParks,
       this.currentQueueTimesMap,
       threshold,
     );
+    this.logger.warn(`🕐 [TIMING] Continent stats calculation took ${Date.now() - continentStatsStart}ms`);
 
-    // Calculate park operating status by country (top 10)
+    // Country stats timing
+    const countryStatsStart = Date.now();
     const parksByCountry = this.calculateParkOperatingByCountry(
       allParks,
       this.currentQueueTimesMap,
       threshold,
     );
+    this.logger.warn(`🕐 [TIMING] Country stats calculation took ${Date.now() - countryStatsStart}ms`);
 
-    // Calculate ride statistics
+    // Ride statistics timing
+    const rideStatsStart = Date.now();
     const rideStatistics = this.calculateRideStatistics(allParks, threshold, this.currentQueueTimesMap);
+    this.logger.warn(`🕐 [TIMING] Ride statistics calculation took ${Date.now() - rideStatsStart}ms`);
 
     // Clear the queue times map after use
     this.currentQueueTimesMap.clear();
 
-    return {
+    const totalTime = Date.now() - startTime;
+    this.logger.warn(`🕐 [TIMING] getStatistics - TOTAL TIME: ${totalTime}ms`);
+
+    const result = {
       totalParks,
       totalThemeAreas,
       totalRides,
@@ -129,6 +144,15 @@ export class StatisticsService {
       parksByContinent,
       parksByCountry,
     };
+
+    return result;
+  }
+
+  /**
+   * Load latest queue times from cache via RidesService
+   */
+  private async getLatestQueueTimesFromCache(rideIds: number[]): Promise<Map<number, QueueTime>> {
+    return await this.ridesService.getLatestQueueTimesFromCache(rideIds);
   }
 
   /**
@@ -206,6 +230,9 @@ export class StatisticsService {
    * Calculate comprehensive ride statistics
    */
   private calculateRideStatistics(parks: any[], threshold: number, queueTimesMap: Map<number, QueueTime>) {
+    const startTime = Date.now();
+    this.logger.warn('🕐 [TIMING] calculateRideStatistics - START');
+
     let totalRides = 0;
     let activeRides = 0;
     let openRides = 0;
@@ -218,7 +245,8 @@ export class StatisticsService {
       '120+': 0,
     };
 
-    // Get all rides from all parks
+    // Ride data preparation timing
+    const rideDataStart = Date.now();
     const allRides = parks.flatMap((park) => {
       const parkRides = this.parkUtils.getAllRidesFromPark(park);
       return parkRides.map((ride: any) => ({
@@ -231,10 +259,11 @@ export class StatisticsService {
         },
       }));
     });
-
     totalRides = allRides.length;
+    this.logger.warn(`🕐 [TIMING] Ride data preparation (${totalRides} rides) took ${Date.now() - rideDataStart}ms`);
 
-    // Calculate ride statistics
+    // Basic statistics calculation timing
+    const basicStatsStart = Date.now();
     allRides.forEach((ride) => {
       if (ride.isActive) activeRides++;
 
@@ -255,24 +284,40 @@ export class StatisticsService {
         }
       }
     });
+    this.logger.warn(`🕐 [TIMING] Basic statistics calculation took ${Date.now() - basicStatsStart}ms`);
 
-    // Calculate ride statistics by continent
+    // Continent stats timing
+    const continentStatsStart = Date.now();
     const ridesByContinent = this.calculateRidesByContinent(parks);
+    this.logger.warn(`🕐 [TIMING] Rides by continent calculation took ${Date.now() - continentStatsStart}ms`);
 
-    // Calculate ride statistics by country (top 10)
+    // Country stats timing
+    const countryStatsStart = Date.now();
     const ridesByCountry = this.calculateRidesByCountry(parks);
+    this.logger.warn(`🕐 [TIMING] Rides by country calculation took ${Date.now() - countryStatsStart}ms`);
 
-    // Find rides with longest wait times (top 5)
+    // Longest wait times timing
+    const longestWaitStart = Date.now();
     const longestWaitTimes = this.getLongestWaitTimes(allRides);
+    this.logger.warn(`🕐 [TIMING] Longest wait times calculation took ${Date.now() - longestWaitStart}ms`);
 
-    // Find most popular rides (shortest wait times among open rides, top 5)
+    // Shortest wait times timing
+    const shortestWaitStart = Date.now();
     const shortestWaitTimes = this.getShortestWaitTimes(allRides);
+    this.logger.warn(`🕐 [TIMING] Shortest wait times calculation took ${Date.now() - shortestWaitStart}ms`);
 
-    // Find parks with highest average wait times (top 5)
+    // Busiest parks timing
+    const busiestParksStart = Date.now();
     const busiestParks = this.getBusiestParks(parks, threshold);
+    this.logger.warn(`🕐 [TIMING] Busiest parks calculation took ${Date.now() - busiestParksStart}ms`);
 
-    // Find parks with lowest average wait times (top 5)
+    // Quietest parks timing
+    const quietestParksStart = Date.now();
     const quietestParks = this.getQuietestParks(parks, threshold);
+    this.logger.warn(`🕐 [TIMING] Quietest parks calculation took ${Date.now() - quietestParksStart}ms`);
+
+    const totalTime = Date.now() - startTime;
+    this.logger.warn(`🕐 [TIMING] calculateRideStatistics - TOTAL TIME: ${totalTime}ms`);
 
     return {
       totalRides,

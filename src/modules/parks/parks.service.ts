@@ -1413,7 +1413,7 @@ export class ParksService {
     }
 
     // Load only the latest queue time for this specific ride
-    const latestQueueTime = await this.ridesService.getLatestQueueTimeForRide(targetRide.id);
+    const latestQueueTime = await this.ridesService.getLatestQueueTimeFromCache(targetRide.id);
 
     return {
       id: targetRide.id,

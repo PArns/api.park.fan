@@ -6,6 +6,7 @@ import { Park } from '../parks/park.entity.js';
 import { ThemeArea } from '../parks/theme-area.entity.js';
 import { Ride } from '../parks/ride.entity.js';
 import { QueueTime } from '../parks/queue-time.entity.js';
+import { CacheService } from '../utils/cache.service.js';
 import axios from 'axios';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -30,6 +31,7 @@ export class QueueTimesParserService {
     private readonly rideRepository: Repository<Ride>,
     @InjectRepository(QueueTime)
     private readonly queueTimeRepository: Repository<QueueTime>,
+    private readonly cacheService: CacheService,
   ) {
     // Dynamically read version from package.json
     try {
@@ -527,10 +529,24 @@ export class QueueTimesParserService {
           `Processing ${queueTimesToInsert.length} queue times for park ${park.name}`,
         );
 
+        // Collect new queue times for cache update
+        const newQueueTimes = new Map<number, any>();
+
         // Process each queue time individually to avoid complex bulk insert issues
         const rideProcessingPromises = queueTimesToInsert.map(
           async (qtData) => {
-            return this.processIndividualQueueTime(qtData, park.id);
+            const result = await this.processIndividualQueueTime(qtData, park.id);
+            
+            // If a new queue time was created, collect it for cache update
+            if (result.newEntries > 0 && result.queueTimeData) {
+              newQueueTimes.set(result.queueTimeData.rideId, {
+                waitTime: result.queueTimeData.waitTime,
+                isOpen: result.queueTimeData.isOpen,
+                lastUpdated: result.queueTimeData.lastUpdated,
+              });
+            }
+            
+            return result;
           },
         );
 
@@ -549,6 +565,11 @@ export class QueueTimesParserService {
             parkSkippedEntries++;
           }
         });
+
+        // Update cache with new queue times for this park
+        if (newQueueTimes.size > 0) {
+          await this.updateQueueTimesCache(newQueueTimes);
+        }
       }
 
       return { newEntries: parkNewEntries, skippedEntries: parkSkippedEntries };
@@ -568,7 +589,7 @@ export class QueueTimesParserService {
   private async processIndividualQueueTime(
     qtData: any,
     parkId: number,
-  ): Promise<{ newEntries: number; skippedEntries: number }> {
+  ): Promise<{ newEntries: number; skippedEntries: number; queueTimeData?: any }> {
     try {
       // First, find the actual ride entity to get its database ID
       const ride = await this.rideRepository.findOne({
@@ -606,7 +627,18 @@ export class QueueTimesParserService {
         });
 
         await this.queueTimeRepository.save(queueTime);
-        return { newEntries: 1, skippedEntries: 0 };
+        
+        // Return queue time data for cache update
+        return { 
+          newEntries: 1, 
+          skippedEntries: 0,
+          queueTimeData: {
+            rideId: ride.id,
+            waitTime: qtData.waitTime,
+            isOpen: qtData.isOpen,
+            lastUpdated: qtData.lastUpdated,
+          }
+        };
       } else {
         return { newEntries: 0, skippedEntries: 1 };
       }
@@ -623,4 +655,27 @@ export class QueueTimesParserService {
       return { newEntries: 0, skippedEntries: 1 };
     }
   }
+
+  /**
+   * Updates the cache with the latest queue times for rides
+   */
+  private async updateQueueTimesCache(queueTimesMap: Map<number, any>): Promise<void> {
+    try {
+      this.logger.debug(`Updating cache with ${queueTimesMap.size} queue times`);
+      
+      const promises = [];
+      for (const [rideId, queueTimeData] of queueTimesMap) {
+        const cacheKey = `latest_queue_time_${rideId}`;
+        
+        // Cache for 1 hour - this will be refreshed when new data comes in
+        promises.push(this.cacheService.setAsync(cacheKey, queueTimeData, 3600));
+      }
+      
+      await Promise.all(promises);
+      this.logger.debug(`Cache updated successfully for ${queueTimesMap.size} rides`);
+    } catch (error) {
+      this.logger.error('Failed to update queue times cache:', error);
+    }
+  }
+
 }

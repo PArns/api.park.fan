@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
 import {
   CacheEntry,
   CacheConfig,
@@ -8,9 +9,9 @@ import {
 } from './cache.interface';
 
 @Injectable()
-export class CacheService implements ICacheService {
+export class CacheService implements ICacheService, OnModuleDestroy {
   private readonly logger = new Logger(CacheService.name);
-  private readonly cache = new Map<string, CacheEntry<any>>();
+  private readonly redis: Redis;
   private readonly config: Required<CacheConfig>;
   private stats = {
     hits: 0,
@@ -30,202 +31,243 @@ export class CacheService implements ICacheService {
       ), // 5 minutes
     };
 
-    // Start cleanup interval
-    this.startCleanupInterval();
+    // Initialize Redis connection
+    this.redis = new Redis({
+      host: this.configService.get<string>('REDIS_HOST', 'localhost'),
+      port: this.configService.get<number>('REDIS_PORT', 6379),
+      username: this.configService.get<string>('REDIS_USER'),
+      password: this.configService.get<string>('REDIS_PASS'),
+      enableReadyCheck: false,
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
+      keyPrefix: 'parkfan:cache:',
+    });
+
+    this.redis.on('connect', () => {
+      this.logger.log('Connected to Redis cache');
+    });
+
+    this.redis.on('error', (error) => {
+      this.logger.error('Redis cache connection error:', error);
+    });
 
     this.logger.log(
-      `Cache service initialized with config: ${JSON.stringify(this.config)}`,
+      `Cache service initialized with Redis backend`,
     );
+  }
+
+  /**
+   * Cleanup on module destroy
+   */
+  async onModuleDestroy() {
+    await this.redis.quit();
+    this.logger.log('Redis connection closed');
   }
 
   /**
    * Get value from cache
    */
   get<T>(key: string): T | null {
-    const entry = this.cache.get(key);
-
-    if (!entry) {
-      this.stats.misses++;
-      return null;
-    }
-
-    // Check if expired
-    if (this.isExpired(entry)) {
-      this.cache.delete(key);
-      this.stats.misses++;
-      return null;
-    }
-
-    this.stats.hits++;
-    return entry.value as T;
+    // For backward compatibility with sync interface, we return null and log
+    // Users should use getAsync for Redis operations
+    this.logger.debug(`Sync get called for key ${key}, consider using getAsync`);
+    this.stats.misses++;
+    return null;
   }
 
   /**
-   * Set value in cache
+   * Get value from cache (async version)
    */
-  set<T>(key: string, value: T, ttl?: number): void {
-    const effectiveTtl = ttl ?? this.config.defaultTtl;
+  async getAsync<T>(key: string): Promise<T | null> {
+    try {
+      const value = await this.redis.get(key);
+      
+      if (!value) {
+        this.stats.misses++;
+        return null;
+      }
 
-    // Check cache size limit
-    if (this.cache.size >= this.config.maxSize && !this.cache.has(key)) {
-      this.evictOldest();
+      this.stats.hits++;
+      return JSON.parse(value) as T;
+    } catch (error) {
+      this.logger.error(`Error getting cache key ${key}:`, error);
+      this.stats.misses++;
+      return null;
     }
-
-    const entry: CacheEntry<T> = {
-      value,
-      timestamp: Date.now(),
-      ttl: effectiveTtl,
-    };
-
-    this.cache.set(key, entry);
   }
 
   /**
-   * Delete specific key from cache
+   * Set value in cache with TTL
+   */
+  set<T>(key: string, value: T, ttlSeconds?: number): void {
+    try {
+      const ttl = ttlSeconds || Math.floor(this.config.defaultTtl / 1000);
+      const serializedValue = JSON.stringify(value);
+      
+      if (ttl > 0) {
+        this.redis.setex(key, ttl, serializedValue);
+      } else {
+        this.redis.set(key, serializedValue);
+      }
+      
+      this.logger.debug(`Set cache key ${key} with TTL ${ttl}s`);
+    } catch (error) {
+      this.logger.error(`Error setting cache key ${key}:`, error);
+    }
+  }
+
+  /**
+   * Set value in cache with TTL (async version)
+   */
+  async setAsync<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
+    try {
+      const ttl = ttlSeconds || Math.floor(this.config.defaultTtl / 1000);
+      const serializedValue = JSON.stringify(value);
+      
+      if (ttl > 0) {
+        await this.redis.setex(key, ttl, serializedValue);
+      } else {
+        await this.redis.set(key, serializedValue);
+      }
+      
+      this.logger.debug(`Set cache key ${key} with TTL ${ttl}s`);
+    } catch (error) {
+      this.logger.error(`Error setting cache key ${key}:`, error);
+    }
+  }
+
+  /**
+   * Delete value from cache
    */
   delete(key: string): boolean {
-    return this.cache.delete(key);
+    try {
+      // Fire and forget for sync compatibility
+      this.redis.del(key);
+      return true;
+    } catch (error) {
+      this.logger.error(`Error deleting cache key ${key}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Delete value from cache (async version)
+   */
+  async deleteAsync(key: string): Promise<boolean> {
+    try {
+      const result = await this.redis.del(key);
+      return result > 0;
+    } catch (error) {
+      this.logger.error(`Error deleting cache key ${key}:`, error);
+      return false;
+    }
   }
 
   /**
    * Clear all cache entries
    */
   clear(): void {
-    this.cache.clear();
-    this.stats.hits = 0;
-    this.stats.misses = 0;
-    this.logger.log('Cache cleared');
+    try {
+      // Fire and forget for sync compatibility
+      this.redis.keys('*').then(keys => {
+        if (keys.length > 0) {
+          this.redis.del(...keys);
+        }
+      });
+      this.logger.log('Cache clear initiated');
+    } catch (error) {
+      this.logger.error('Error clearing cache:', error);
+    }
+  }
+
+  /**
+   * Clear all cache entries (async version)
+   */
+  async clearAsync(): Promise<void> {
+    try {
+      const keys = await this.redis.keys('*');
+      if (keys.length > 0) {
+        await this.redis.del(...keys);
+      }
+      this.logger.log('Cache cleared');
+    } catch (error) {
+      this.logger.error('Error clearing cache:', error);
+    }
   }
 
   /**
    * Check if key exists in cache
    */
   has(key: string): boolean {
-    const entry = this.cache.get(key);
-    return entry ? !this.isExpired(entry) : false;
+    // For backward compatibility with sync interface
+    this.logger.debug(`Sync has called for key ${key}, consider using hasAsync`);
+    return false;
   }
 
   /**
-   * Get current cache size
+   * Check if key exists in cache (async version)
+   */
+  async hasAsync(key: string): Promise<boolean> {
+    try {
+      const result = await this.redis.exists(key);
+      return result === 1;
+    } catch (error) {
+      this.logger.error(`Error checking cache key ${key}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Get cache size
    */
   size(): number {
-    return this.cache.size;
+    // For backward compatibility with sync interface
+    this.logger.debug(`Sync size called, consider using sizeAsync`);
+    return 0;
+  }
+
+  /**
+   * Get cache size (async version)
+   */
+  async sizeAsync(): Promise<number> {
+    try {
+      return await this.redis.dbsize();
+    } catch (error) {
+      this.logger.error('Error getting cache size:', error);
+      return 0;
+    }
   }
 
   /**
    * Get cache statistics
    */
   getStats(): CacheStats {
-    const total = this.stats.hits + this.stats.misses;
+    const cacheSize = this.size();
     return {
       hits: this.stats.hits,
       misses: this.stats.misses,
-      entries: this.cache.size,
-      hitRate: total > 0 ? (this.stats.hits / total) * 100 : 0,
+      hitRate: this.stats.hits / (this.stats.hits + this.stats.misses) || 0,
+      entries: cacheSize,
     };
   }
 
   /**
-   * Get or set pattern - convenient method for caching
+   * Get cache statistics (async version)
    */
-  async getOrSet<T>(
-    key: string,
-    factory: () => Promise<T> | T,
-    ttl?: number,
-  ): Promise<T> {
-    const cached = this.get<T>(key);
-    if (cached !== null) {
-      return cached;
-    }
-
-    const value = await factory();
-    this.set(key, value, ttl);
-    return value;
+  async getStatsAsync(): Promise<CacheStats> {
+    const cacheSize = await this.sizeAsync();
+    return {
+      hits: this.stats.hits,
+      misses: this.stats.misses,
+      hitRate: this.stats.hits / (this.stats.hits + this.stats.misses) || 0,
+      entries: cacheSize,
+    };
   }
 
   /**
-   * Invalidate cache entries by pattern
+   * Get Redis client for advanced operations
    */
-  invalidatePattern(pattern: string): number {
-    const regex = new RegExp(pattern);
-    let deleted = 0;
-
-    for (const key of this.cache.keys()) {
-      if (regex.test(key)) {
-        this.cache.delete(key);
-        deleted++;
-      }
-    }
-
-    this.logger.log(
-      `Invalidated ${deleted} cache entries matching pattern: ${pattern}`,
-    );
-    return deleted;
-  }
-
-  /**
-   * Warm up cache with predefined data
-   */
-  warmUp(data: Record<string, any>, ttl?: number): void {
-    Object.entries(data).forEach(([key, value]) => {
-      this.set(key, value, ttl);
-    });
-
-    this.logger.log(`Warmed up cache with ${Object.keys(data).length} entries`);
-  }
-
-  /**
-   * Check if cache entry is expired
-   */
-  private isExpired(entry: CacheEntry<any>): boolean {
-    return Date.now() - entry.timestamp > entry.ttl;
-  }
-
-  /**
-   * Evict oldest entry to make room for new ones
-   */
-  private evictOldest(): void {
-    let oldestKey: string | null = null;
-    let oldestTimestamp = Date.now();
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry.timestamp < oldestTimestamp) {
-        oldestTimestamp = entry.timestamp;
-        oldestKey = key;
-      }
-    }
-
-    if (oldestKey) {
-      this.cache.delete(oldestKey);
-      this.logger.debug(`Evicted oldest cache entry: ${oldestKey}`);
-    }
-  }
-
-  /**
-   * Start cleanup interval to remove expired entries
-   */
-  private startCleanupInterval(): void {
-    setInterval(() => {
-      this.cleanup();
-    }, this.config.cleanupInterval);
-  }
-
-  /**
-   * Clean up expired entries
-   */
-  private cleanup(): void {
-    let cleaned = 0;
-    const now = Date.now();
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (now - entry.timestamp > entry.ttl) {
-        this.cache.delete(key);
-        cleaned++;
-      }
-    }
-
-    if (cleaned > 0) {
-      this.logger.debug(`Cleaned up ${cleaned} expired cache entries`);
-    }
+  getRedisClient(): Redis {
+    return this.redis;
   }
 }

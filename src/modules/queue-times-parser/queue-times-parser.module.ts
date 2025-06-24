@@ -8,11 +8,13 @@ import { Ride } from '../parks/ride.entity';
 import { QueueTime } from '../parks/queue-time.entity';
 import { QueueTimesParserService } from './queue-times-parser.service.js';
 import { QueueTimesScheduler } from './queue-times-scheduler.service.js';
+import { UtilsModule } from '../utils/utils.module.js';
 
 @Module({
   imports: [
     ParksModule,
     TypeOrmModule.forFeature([ParkGroup, Park, ThemeArea, Ride, QueueTime]),
+    UtilsModule,
   ],
   providers: [QueueTimesParserService, QueueTimesScheduler],
   exports: [QueueTimesParserService],
