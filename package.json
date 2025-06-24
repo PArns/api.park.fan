@@ -79,6 +79,7 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "@nestjs/core",
+      "@swc/core",
       "unrs-resolver"
     ]
   }

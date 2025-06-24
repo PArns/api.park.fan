@@ -1,0 +1,5 @@
+# Enable pre and post scripts for packages
+enable-pre-post-scripts=true
+
+# Automatically install peer dependencies
+auto-install-peers=false
