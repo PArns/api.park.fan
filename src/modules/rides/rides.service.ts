@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Ride } from '../parks/ride.entity.js';
+import { QueueTime } from '../parks/queue-time.entity.js';
 import { RideQueryDto } from './rides.dto.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
 
@@ -10,6 +11,8 @@ export class RidesService {
   constructor(
     @InjectRepository(Ride)
     private readonly rideRepository: Repository<Ride>,
+    @InjectRepository(QueueTime)
+    private readonly queueTimeRepository: Repository<QueueTime>,
     private readonly parkUtils: ParkUtilsService,
   ) {}
 
@@ -143,5 +146,55 @@ export class RidesService {
       themeArea: ride.themeArea,
       currentQueueTime,
     };
+  }
+
+  /**
+   * Get the latest queue time for a specific ride (optimized for large datasets)
+   */
+  async getLatestQueueTimeForRide(rideId: number): Promise<QueueTime | null> {
+    return await this.queueTimeRepository
+      .createQueryBuilder('queueTime')
+      .where('queueTime.ride = :rideId', { rideId })
+      .orderBy('queueTime.lastUpdated', 'DESC')
+      .addOrderBy('queueTime.recordedAt', 'DESC')
+      .limit(1)
+      .getOne();
+  }
+
+  /**
+   * Get the latest queue time for multiple rides (optimized batch operation)
+   * Returns a Map with rideId as key and QueueTime as value
+   */
+  async getLatestQueueTimesForRides(rideIds: number[]): Promise<Map<number, QueueTime>> {
+    if (rideIds.length === 0) {
+      return new Map();
+    }
+
+    const latestQueueTimes = await this.queueTimeRepository
+      .createQueryBuilder('queueTime')
+      .select([
+        'queueTime.id',
+        'queueTime.waitTime', 
+        'queueTime.isOpen',
+        'queueTime.lastUpdated',
+        'queueTime.recordedAt'
+      ])
+      .addSelect('queueTime.rideId', 'rideId')
+      .where('queueTime.ride IN (:...rideIds)', { rideIds })
+      .andWhere(`queueTime.id IN (
+        SELECT DISTINCT ON (qt."rideId") qt.id
+        FROM queue_time qt
+        WHERE qt."rideId" IN (:...rideIds)
+        ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
+      )`)
+      .getRawAndEntities();
+
+    const queueTimeMap = new Map<number, QueueTime>();
+    latestQueueTimes.entities.forEach((queueTime, index) => {
+      const rideId = latestQueueTimes.raw[index].rideId;
+      queueTimeMap.set(rideId, queueTime);
+    });
+
+    return queueTimeMap;
   }
 }

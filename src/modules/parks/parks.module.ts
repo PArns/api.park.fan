@@ -16,6 +16,7 @@ import { WeatherBackgroundService } from './weather-background.service.js';
 import { WEATHER_CACHE_SERVICE } from './weather-cache.interface.js';
 import { QueueTimesParserService } from '../queue-times-parser/queue-times-parser.service';
 import { RidesService } from '../rides/rides.service';
+import { RidesModule } from '../rides/rides.module';
 import { UtilsModule } from '../utils/utils.module';
 
 @Module({
@@ -30,11 +31,11 @@ import { UtilsModule } from '../utils/utils.module';
     ]),
     ScheduleModule.forRoot(),
     UtilsModule,
+    RidesModule,
   ],
   controllers: [ParksController],
   providers: [
     ParksService,
-    RidesService,
     QueueTimesParserService,
     CrowdLevelService,
     WeatherService,

@@ -38,6 +38,6 @@ export class Ride {
   })
   themeArea: ThemeArea | null; // Optional - ride can exist without being assigned to a theme area
 
-  @OneToMany(() => QueueTime, (queueTime: QueueTime) => queueTime.ride)
-  queueTimes: QueueTime[];
+  @OneToMany(() => QueueTime, (queueTime: QueueTime) => queueTime.ride, {lazy: true})
+  queueTimes: Promise<QueueTime[]>;
 }

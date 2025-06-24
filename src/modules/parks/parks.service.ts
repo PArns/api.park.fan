@@ -7,6 +7,7 @@ import { CrowdLevelService } from './crowd-level.service.js';
 import { WeatherService } from './weather.service.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
 import { CacheService } from '../utils/cache.service.js';
+import { RidesService } from '../rides/rides.service.js';
 
 @Injectable()
 export class ParksService {
@@ -19,6 +20,7 @@ export class ParksService {
     private readonly crowdLevelService: CrowdLevelService,
     private readonly weatherService: WeatherService,
     private readonly cacheService: CacheService,
+    private readonly ridesService: RidesService,
   ) {}
 
   /**
@@ -64,11 +66,10 @@ export class ParksService {
   }
 
   /**
-   * Helper function to transform rides with current queue times
+   * Helper function to transform rides with current queue times using queue time map
    */
-  private async transformRide(ride: any) {
-    const currentQueueTime =
-      ride.queueTimes && ride.queueTimes.length > 0 ? ride.queueTimes[0] : null;
+  private transformRide(ride: any, queueTimeMap: Map<number, any>) {
+    const currentQueueTime = queueTimeMap.get(ride.id) || null;
 
     return {
       ...ride,
@@ -77,15 +78,11 @@ export class ParksService {
       themeArea: undefined, // Remove theme area reference to avoid circular data
       park: undefined, // Remove park reference to avoid circular data
     };
-  }
-
-  /**
-   * Helper function to transform theme areas with rides
+  }  /**
+   * Helper function to transform theme areas with rides using queue time map
    */
-  private async transformThemeArea(themeArea: any) {
-    const rides = await Promise.all(
-      themeArea.rides.map((ride) => this.transformRide(ride)),
-    );
+  private transformThemeArea(themeArea: any, queueTimeMap: Map<number, any>) {
+    const rides = themeArea.rides.map((ride) => this.transformRide(ride, queueTimeMap));
 
     return {
       ...themeArea,
@@ -110,6 +107,19 @@ export class ParksService {
     const waitTimeDistribution =
       await this.parkUtils.calculateWaitTimeDistributionFromDb(park.id);
 
+    // Create queueTimeMap from already loaded queueTimes
+    const queueTimeMap = new Map();
+    const allRides = [
+      ...(park.rides || []),
+      ...(park.themeAreas || []).flatMap(ta => ta.rides || [])
+    ];
+    
+    allRides.forEach((ride) => {
+      if (ride.queueTimes && ride.queueTimes.length > 0) {
+        queueTimeMap.set(ride.id, ride.queueTimes[0]);
+      }
+    });
+
     // Get cached weather data for park (current + forecast) - never make API calls during request processing
     let weatherData = null;
     if (includeWeather) {
@@ -127,9 +137,7 @@ export class ParksService {
     }
 
     // Handle parks with and without theme areas
-    let themeAreas = await Promise.all(
-      park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea)),
-    );
+    let themeAreas = park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea, queueTimeMap));
 
     // If park has no theme areas but has direct rides, create a virtual theme area
     if (themeAreas.length === 0 && park.rides && park.rides.length > 0) {
@@ -142,9 +150,7 @@ export class ParksService {
             id: null,
             queueTimesId: null,
             name: 'Rides', // Generic name for rides without theme area
-            rides: await Promise.all(
-              unassignedRides.map((ride) => this.transformRide(ride)),
-            ),
+            rides: unassignedRides.map((ride) => this.transformRide(ride, queueTimeMap)),
           },
         ];
       }
@@ -228,10 +234,21 @@ export class ParksService {
       weatherData = weatherDataMap.get(park.id) || null;
     }
 
+    // Create queueTimeMap from already loaded queueTimes
+    const queueTimeMap = new Map();
+    const allRides = [
+      ...(park.rides || []),
+      ...(park.themeAreas || []).flatMap(ta => ta.rides || [])
+    ];
+    
+    allRides.forEach((ride) => {
+      if (ride.queueTimes && ride.queueTimes.length > 0) {
+        queueTimeMap.set(ride.id, ride.queueTimes[0]);
+      }
+    });
+
     // Handle parks with and without theme areas
-    let themeAreas = await Promise.all(
-      park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea)),
-    );
+    let themeAreas = park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea, queueTimeMap));
 
     // If park has no theme areas but has direct rides, create a virtual theme area
     if (themeAreas.length === 0 && park.rides && park.rides.length > 0) {
@@ -244,9 +261,7 @@ export class ParksService {
             id: null,
             queueTimesId: null,
             name: 'Rides', // Generic name for rides without theme area
-            rides: await Promise.all(
-              unassignedRides.map((ride) => this.transformRide(ride)),
-            ),
+            rides: unassignedRides.map((ride) => this.transformRide(ride, queueTimeMap)),
           },
         ];
       }
@@ -920,6 +935,9 @@ export class ParksService {
       ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
     ];
 
+    // Create queue times map
+    const queueTimeMap = new Map();
+
     if (allRides.length > 0) {
       const rideIds = allRides.map((ride) => ride.id);
 
@@ -943,21 +961,13 @@ export class ParksService {
       );
 
       // Create a map for quick lookup
-      const queueTimeMap = new Map();
       latestQueueTimes.forEach((qt) => {
-        queueTimeMap.set(qt.rideId, [
-          {
-            waitTime: qt.waitTime,
-            isOpen: qt.isOpen,
-            lastUpdated: qt.lastUpdated,
-            recordedAt: qt.recordedAt,
-          },
-        ]);
-      });
-
-      // Apply queue times to rides
-      allRides.forEach((ride) => {
-        ride.queueTimes = queueTimeMap.get(ride.id) || [];
+        queueTimeMap.set(qt.rideId, {
+          waitTime: qt.waitTime,
+          isOpen: qt.isOpen,
+          lastUpdated: qt.lastUpdated,
+          recordedAt: qt.recordedAt,
+        });
       });
     }
 
@@ -971,7 +981,7 @@ export class ParksService {
           id: themeArea.id,
           name: themeArea.name,
         },
-        currentQueueTime: this.getLatestQueueTime(ride.queueTimes),
+        currentQueueTime: queueTimeMap.get(ride.id) || null,
       })),
     );
 
@@ -981,7 +991,7 @@ export class ParksService {
       name: ride.name,
       isActive: ride.isActive,
       themeArea: null, // Direct park rides don't belong to a theme area
-      currentQueueTime: this.getLatestQueueTime(ride.queueTimes),
+      currentQueueTime: queueTimeMap.get(ride.id) || null,
     }));
 
     // Combine all rides, avoiding duplicates
@@ -1403,22 +1413,21 @@ export class ParksService {
     }
 
     // Load only the latest queue time for this specific ride
-    const latestQueueTime = await this.parkRepository.query(
-      `
-      SELECT qt.id, qt."waitTime", qt."isOpen", qt."lastUpdated", qt."recordedAt"
-      FROM queue_time qt
-      WHERE qt."rideId" = $1
-      ORDER BY qt."lastUpdated" DESC, qt."recordedAt" DESC
-      LIMIT 1
-    `,
-      [targetRide.id],
-    );
-
-    // Attach the latest queue time
-    targetRide.queueTimes = latestQueueTime || [];
+    const latestQueueTime = await this.ridesService.getLatestQueueTimeForRide(targetRide.id);
 
     return {
-      ...this.transformRideWithLatestQueueTime(targetRide),
+      id: targetRide.id,
+      queueTimesId: targetRide.queueTimesId,
+      name: targetRide.name,
+      isActive: targetRide.isActive,
+      queueTime: latestQueueTime
+        ? {
+            id: latestQueueTime.id,
+            waitTime: latestQueueTime.waitTime,
+            isOpen: latestQueueTime.isOpen,
+            lastUpdated: latestQueueTime.lastUpdated,
+          }
+        : null,
       themeArea: targetThemeArea
         ? {
             id: targetThemeArea.id,
@@ -1456,43 +1465,5 @@ export class ParksService {
     variations.add(slug.toUpperCase());
 
     return Array.from(variations);
-  }
-
-  /**
-   * Get the latest queue time from an array of queue times
-   */
-  private getLatestQueueTime(queueTimes: any[]): any | null {
-    if (!queueTimes || queueTimes.length === 0) {
-      return null;
-    }
-
-    return queueTimes.reduce((latest, current) => {
-      if (!latest) return current;
-      return new Date(current.lastUpdated) > new Date(latest.lastUpdated)
-        ? current
-        : latest;
-    }, null);
-  }
-
-  /**
-   * Transform ride data with latest queue time
-   */
-  private transformRideWithLatestQueueTime(ride: any): any {
-    const latestQueueTime = this.getLatestQueueTime(ride.queueTimes);
-
-    return {
-      id: ride.id,
-      queueTimesId: ride.queueTimesId,
-      name: ride.name,
-      isActive: ride.isActive,
-      queueTime: latestQueueTime
-        ? {
-            id: latestQueueTime.id,
-            waitTime: latestQueueTime.waitTime,
-            isOpen: latestQueueTime.isOpen,
-            lastUpdated: latestQueueTime.lastUpdated,
-          }
-        : null,
-    };
   }
 }

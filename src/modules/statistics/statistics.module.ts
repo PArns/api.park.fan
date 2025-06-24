@@ -5,10 +5,15 @@ import { StatisticsService } from './statistics.service.js';
 import { Park } from '../parks/park.entity.js';
 import { ThemeArea } from '../parks/theme-area.entity.js';
 import { Ride } from '../parks/ride.entity.js';
+import { RidesModule } from '../rides/rides.module.js';
 import { UtilsModule } from '../utils/utils.module.js';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Park, ThemeArea, Ride]), UtilsModule],
+  imports: [
+    TypeOrmModule.forFeature([Park, ThemeArea, Ride]), 
+    RidesModule,
+    UtilsModule
+  ],
   controllers: [StatisticsController],
   providers: [StatisticsService],
 })
