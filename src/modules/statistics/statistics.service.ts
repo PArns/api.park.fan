@@ -76,7 +76,7 @@ export class StatisticsService {
 
     // Extract ride IDs for cache lookup
     const allRideIds = allParks
-      .flatMap((p) => this.parkUtils.getAllRidesFromPark(p as any))
+      .flatMap((p) => this.parkUtils.getAllRidesFromPark(p))
       .map((r) => r.id);
 
     // Load queue times from cache
@@ -609,7 +609,7 @@ export class StatisticsService {
       if (!themeAreasByPark.has(parkId)) {
         themeAreasByPark.set(parkId, []);
       }
-      themeAreasByPark.get(parkId)!.push(themeArea);
+      themeAreasByPark.get(parkId).push(themeArea);
     });
 
     // Group rides by park and theme area
@@ -618,14 +618,14 @@ export class StatisticsService {
       if (!ridesByPark.has(parkId)) {
         ridesByPark.set(parkId, []);
       }
-      ridesByPark.get(parkId)!.push(ride);
+      ridesByPark.get(parkId).push(ride);
 
       if (ride.themeArea) {
         const themeAreaId = ride.themeArea.id;
         if (!ridesByThemeArea.has(themeAreaId)) {
           ridesByThemeArea.set(themeAreaId, []);
         }
-        ridesByThemeArea.get(themeAreaId)!.push(ride);
+        ridesByThemeArea.get(themeAreaId).push(ride);
       }
     });
 

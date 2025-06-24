@@ -444,8 +444,8 @@ export class ParksService {
     // Optimized main query using raw SQL for better performance
     const offset = (page - 1) * limit;
 
-    let whereConditions = [];
-    let queryParams: any[] = [];
+    const whereConditions = [];
+    const queryParams: any[] = [];
     let paramIndex = 1;
 
     if (search) {
@@ -600,7 +600,7 @@ export class ParksService {
       ),
     );
 
-    let queueTimeMap = new Map();
+    const queueTimeMap = new Map();
     if (allRideIds.length > 0) {
       // Use cache instead of database query for better performance
       const cachedQueueTimes =
@@ -810,7 +810,7 @@ export class ParksService {
     });
 
     // Batch load latest queue times for all rides in this park from cache
-    let queueTimeMap = new Map();
+    const queueTimeMap = new Map();
     if (allRideIds.size > 0) {
       const rideIdsArray = Array.from(allRideIds);
       // Use cache instead of database query
@@ -1213,64 +1213,147 @@ export class ParksService {
     const countryVariations = this.generateNameVariations(countrySlug);
     const parkVariations = this.generateNameVariations(parkSlug);
 
-    // First, find the park without loading all queue times to avoid memory issues
-    const queryBuilder = this.parkRepository
-      .createQueryBuilder('park')
-      .leftJoinAndSelect('park.parkGroup', 'parkGroup')
-      .leftJoinAndSelect('park.themeAreas', 'themeAreas')
-      .leftJoinAndSelect('themeAreas.rides', 'themeAreaRides')
-      .leftJoinAndSelect('park.rides', 'rides');
+    // Use raw SQL query to avoid TypeORM lazy-loading issues
+    const parkQuery = `
+      SELECT 
+        p.id as park_id,
+        p."queueTimesId" as park_queue_times_id,
+        p.name as park_name,
+        p.country as park_country,
+        p.continent as park_continent,
+        p.latitude as park_latitude,
+        p.longitude as park_longitude,
+        p.timezone as park_timezone,
+        pg.id as park_group_id,
+        pg.name as park_group_name,
+        pg."queueTimesId" as park_group_queue_times_id,
+        ta.id as theme_area_id,
+        ta."queueTimesId" as theme_area_queue_times_id,
+        ta.name as theme_area_name,
+        r.id as ride_id,
+        r."queueTimesId" as ride_queue_times_id,
+        r.name as ride_name,
+        r."isActive" as ride_is_active,
+        r."themeAreaId" as ride_theme_area_id,
+        r."parkId" as ride_park_id
+      FROM park p
+      LEFT JOIN park_group pg ON p."parkGroupId" = pg.id
+      LEFT JOIN theme_area ta ON ta."parkId" = p.id
+      LEFT JOIN ride r ON (r."themeAreaId" = ta.id OR r."parkId" = p.id)
+      WHERE LOWER(p.continent) = ANY($1) 
+        AND LOWER(p.country) = ANY($2) 
+        AND LOWER(p.name) = ANY($3)
+      ORDER BY ta.name ASC, r.name ASC
+    `;
 
-    // Add conditions for continent, country, and park name
-    queryBuilder.where(
-      'LOWER(park.continent) IN (:...continents) AND LOWER(park.country) IN (:...countries) AND LOWER(park.name) IN (:...parks)',
-      {
-        continents: continentVariations.map((v) => v.toLowerCase()),
-        countries: countryVariations.map((v) => v.toLowerCase()),
-        parks: parkVariations.map((v) => v.toLowerCase()),
-      },
-    );
+    const rawResults = await this.parkRepository.query(parkQuery, [
+      continentVariations.map((v) => v.toLowerCase()),
+      countryVariations.map((v) => v.toLowerCase()),
+      parkVariations.map((v) => v.toLowerCase()),
+    ]);
 
-    const park = await queryBuilder.getOne();
-
-    if (!park) {
+    if (rawResults.length === 0) {
       return null;
     }
 
-    // Now load only the latest queue time for each ride to avoid memory overflow
-    const allRides = [
-      ...park.rides,
-      ...(park.themeAreas?.flatMap((ta) => ta.rides) || []),
-    ];
+    // Transform raw results into structured park data
+    const firstRow = rawResults[0];
+    const park = {
+      id: firstRow.park_id,
+      queueTimesId: firstRow.park_queue_times_id,
+      name: firstRow.park_name,
+      country: firstRow.park_country,
+      continent: firstRow.park_continent,
+      latitude: firstRow.park_latitude,
+      longitude: firstRow.park_longitude,
+      timezone: firstRow.park_timezone,
+      parkGroup: firstRow.park_group_id
+        ? {
+            id: firstRow.park_group_id,
+            name: firstRow.park_group_name,
+            queueTimesId: firstRow.park_group_queue_times_id,
+          }
+        : null,
+      themeAreas: new Map(),
+      rides: new Map(),
+    };
 
-    if (allRides.length > 0) {
-      const rideIds = allRides.map((ride) => ride.id);
+    const allRideIds = new Set<number>();
 
-      // Use cache instead of database query for better performance
+    // Process all rows to build theme areas and rides
+    rawResults.forEach((row: any) => {
+      if (row.ride_id) {
+        const ride = {
+          id: row.ride_id,
+          queueTimesId: row.ride_queue_times_id,
+          name: row.ride_name,
+          isActive: row.ride_is_active,
+          queueTimes: [], // Will be populated separately
+        };
+
+        allRideIds.add(row.ride_id);
+
+        if (row.ride_theme_area_id && row.theme_area_id) {
+          // Ride belongs to a theme area
+          if (!park.themeAreas.has(row.theme_area_id)) {
+            park.themeAreas.set(row.theme_area_id, {
+              id: row.theme_area_id,
+              queueTimesId: row.theme_area_queue_times_id,
+              name: row.theme_area_name,
+              rides: [],
+            });
+          }
+          park.themeAreas.get(row.theme_area_id).rides.push(ride);
+        } else if (row.ride_park_id === park.id) {
+          // Direct park ride
+          park.rides.set(row.ride_id, ride);
+        }
+      } else if (row.theme_area_id && !park.themeAreas.has(row.theme_area_id)) {
+        // Theme area without rides
+        park.themeAreas.set(row.theme_area_id, {
+          id: row.theme_area_id,
+          queueTimesId: row.theme_area_queue_times_id,
+          name: row.theme_area_name,
+          rides: [],
+        });
+      }
+    });
+
+    // Batch load latest queue times for all rides in this park from cache
+    const queueTimeMap = new Map();
+    if (allRideIds.size > 0) {
+      const rideIdsArray = Array.from(allRideIds);
+      // Use cache instead of database query
       const cachedQueueTimes =
-        await this.ridesService.getLatestQueueTimesFromCache(rideIds);
+        await this.ridesService.getLatestQueueTimesFromCache(rideIdsArray);
 
-      // Create a map for quick lookup, converting to old format for compatibility
-      const queueTimeMap = new Map();
+      // Convert to old format for compatibility
       cachedQueueTimes.forEach((queueTime, rideId) => {
         if (queueTime) {
           queueTimeMap.set(rideId, [queueTime]); // Wrap in array for compatibility
         }
       });
-
-      // Attach the latest queue times to rides
-      park.rides.forEach((ride) => {
-        ride.queueTimes = queueTimeMap.get(ride.id) || [];
-      });
-
-      park.themeAreas?.forEach((themeArea) => {
-        themeArea.rides?.forEach((ride) => {
-          ride.queueTimes = queueTimeMap.get(ride.id) || [];
-        });
-      });
     }
 
-    return park;
+    // Convert Maps to Arrays and apply queue times to rides
+    const finalPark = {
+      ...park,
+      themeAreas: Array.from(park.themeAreas.values()).map(
+        (themeArea: any) => ({
+          ...themeArea,
+          rides: themeArea.rides.map((ride: any) => ({
+            ...ride,
+            queueTimes: queueTimeMap.get(ride.id) || [],
+          })),
+        }),
+      ),
+      rides: Array.from(park.rides.values()).map((ride: any) => ({
+        ...ride,
+        queueTimes: queueTimeMap.get(ride.id) || [],
+      })),
+    };
+
+    return finalPark;
   }
 
   /**
