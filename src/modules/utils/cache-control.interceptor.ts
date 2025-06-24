@@ -5,7 +5,6 @@ import {
   CallHandler,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
 
 @Injectable()
 export class CacheControlInterceptor implements NestInterceptor {
@@ -14,11 +13,17 @@ export class CacheControlInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
     const response = context.switchToHttp().getResponse();
 
-    return next.handle().pipe(
-      tap(() => {
-        // Set Cache-Control header with max-age (TTL in seconds)
+    // Set Cache-Control header before processing the request
+    // This prevents "Cannot set headers after they are sent" errors
+    try {
+      if (!response.headersSent) {
         response.header('Cache-Control', `public, max-age=${this.TTL_SECONDS}`);
-      }),
-    );
+      }
+    } catch (error) {
+      // Silently ignore header setting errors
+      // This can happen if the response has already been sent
+    }
+
+    return next.handle();
   }
 }

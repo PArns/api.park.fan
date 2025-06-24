@@ -3,7 +3,13 @@ services:
   api:
     build: .
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=${NODE_ENV:-production}
+      - NPM_CONFIG_PRODUCTION=${NPM_CONFIG_PRODUCTION:-false}
+      - DB_HOST=${DB_HOST:-postgres}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASS}
     ports:
       - "${PORT:-3000}:3000"
     restart: always

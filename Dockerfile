@@ -15,5 +15,8 @@ RUN corepack enable \
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --prod
 COPY --from=builder /app/dist ./dist
+# Copy documentation and API specification files
+COPY README.md ./
+COPY openapi.yaml ./
 ENV NODE_ENV=production
 CMD ["node", "dist/main"]

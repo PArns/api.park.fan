@@ -52,48 +52,55 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
     );
 
     try {
-      // Check if entry already exists and update it, or create new one
-      let existingEntry = await this.weatherDataRepository.findOne({
-        where: { id: weatherId },
-      });
+      // Use raw SQL with ON CONFLICT to handle the unique constraint properly
+      // This prevents duplicate key errors on the (park_id, weatherDate, dataType) constraint
+      await this.weatherDataRepository.query(
+        `
+        INSERT INTO weather_data (
+          id, park_id, "weatherDate", "dataType", "temperatureMin", "temperatureMax",
+          "precipitationProbability", "weatherCode", status, "weatherScore",
+          "forecastCreatedDate", "daysAhead", "validUntil", "isFetchFailed",
+          "createdAt", "updatedAt"
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+        )
+        ON CONFLICT (park_id, "weatherDate", "dataType") DO UPDATE SET
+          id = EXCLUDED.id,
+          "temperatureMin" = EXCLUDED."temperatureMin",
+          "temperatureMax" = EXCLUDED."temperatureMax",
+          "precipitationProbability" = EXCLUDED."precipitationProbability",
+          "weatherCode" = EXCLUDED."weatherCode",
+          status = EXCLUDED.status,
+          "weatherScore" = EXCLUDED."weatherScore",
+          "forecastCreatedDate" = CASE 
+            WHEN EXCLUDED."dataType" = 'forecast' THEN EXCLUDED."forecastCreatedDate"
+            ELSE weather_data."forecastCreatedDate"
+          END,
+          "daysAhead" = EXCLUDED."daysAhead",
+          "validUntil" = EXCLUDED."validUntil",
+          "isFetchFailed" = EXCLUDED."isFetchFailed",
+          "updatedAt" = EXCLUDED."updatedAt"
+        `,
+        [
+          weatherId,                              // $1 - id
+          parkId,                                 // $2 - park_id
+          date,                                   // $3 - weatherDate
+          dataType,                               // $4 - dataType
+          data.temperature.min,                   // $5 - temperatureMin
+          data.temperature.max,                   // $6 - temperatureMax
+          data.precipitationProbability,          // $7 - precipitationProbability
+          data.weatherCode,                       // $8 - weatherCode
+          data.status,                            // $9 - status
+          data.weatherScore,                      // $10 - weatherScore
+          dataType === WeatherDataType.FORECAST ? now : null, // $11 - forecastCreatedDate
+          daysAhead || null,                      // $12 - daysAhead
+          validUntil,                             // $13 - validUntil
+          false,                                  // $14 - isFetchFailed
+          now,                                    // $15 - createdAt
+          now,                                    // $16 - updatedAt
+        ],
+      );
 
-      if (existingEntry) {
-        // Update existing entry
-        existingEntry.temperatureMin = data.temperature.min;
-        existingEntry.temperatureMax = data.temperature.max;
-        existingEntry.precipitationProbability = data.precipitationProbability;
-        existingEntry.weatherCode = data.weatherCode;
-        existingEntry.status = data.status;
-        existingEntry.weatherScore = data.weatherScore;
-        existingEntry.forecastCreatedDate =
-          dataType === WeatherDataType.FORECAST
-            ? now
-            : existingEntry.forecastCreatedDate;
-        existingEntry.validUntil = validUntil;
-        existingEntry.isFetchFailed = false;
-        existingEntry.updatedAt = now;
-      } else {
-        // Create new entry
-        existingEntry = this.weatherDataRepository.create({
-          id: weatherId,
-          parkId,
-          weatherDate: date,
-          dataType,
-          temperatureMin: data.temperature.min,
-          temperatureMax: data.temperature.max,
-          precipitationProbability: data.precipitationProbability,
-          weatherCode: data.weatherCode,
-          status: data.status,
-          weatherScore: data.weatherScore,
-          forecastCreatedDate:
-            dataType === WeatherDataType.FORECAST ? now : undefined,
-          daysAhead,
-          validUntil,
-          isFetchFailed: false,
-        });
-      }
-
-      await this.weatherDataRepository.save(existingEntry);
       this.logger.debug(
         `Stored ${dataType} weather data for park ${parkId} on ${dateString}`,
       );
@@ -102,6 +109,7 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
         `Error storing ${dataType} weather data for park ${parkId}:`,
         error,
       );
+      throw error; // Re-throw to allow caller to handle if needed
     }
   }
 
@@ -375,34 +383,77 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
       const today = new Date();
       today.setHours(0, 0, 0, 0); // Set to start of day
 
-      // Find all forecasts that are now in the past
-      const pastForecasts = await this.weatherDataRepository
-        .createQueryBuilder('wd')
-        .where('wd.dataType = :dataType', {
-          dataType: WeatherDataType.FORECAST,
-        })
-        .andWhere('wd.weatherDate < :today', { today })
-        .getMany();
+      // Use SQL to convert forecasts to historical in a single transaction
+      // This avoids race conditions and duplicate key errors
+      const result = await this.weatherDataRepository.query(
+        `
+        WITH converted_forecasts AS (
+          SELECT 
+            park_id,
+            "weatherDate",
+            "temperatureMin",
+            "temperatureMax",
+            "precipitationProbability",
+            "weatherCode",
+            status,
+            "weatherScore",
+            "forecastCreatedDate",
+            "daysAhead",
+            "createdAt"
+          FROM weather_data
+          WHERE "dataType" = 'forecast' 
+            AND "weatherDate" < $1
+        ),
+        insert_historical AS (
+          INSERT INTO weather_data (
+            id, park_id, "weatherDate", "dataType", "temperatureMin", "temperatureMax",
+            "precipitationProbability", "weatherCode", status, "weatherScore",
+            "forecastCreatedDate", "daysAhead", "validUntil", "isFetchFailed",
+            "createdAt", "updatedAt"
+          )
+          SELECT 
+            'park_' || park_id || '_' || "weatherDate"::text || '_historical',
+            park_id,
+            "weatherDate",
+            'historical',
+            "temperatureMin",
+            "temperatureMax",
+            "precipitationProbability",
+            "weatherCode",
+            status,
+            "weatherScore",
+            "forecastCreatedDate",
+            "daysAhead",
+            $2,  -- validUntil (1 year from now)
+            false,
+            "createdAt",
+            NOW()
+          FROM converted_forecasts
+          ON CONFLICT (park_id, "weatherDate", "dataType") DO UPDATE SET
+            "temperatureMin" = EXCLUDED."temperatureMin",
+            "temperatureMax" = EXCLUDED."temperatureMax",
+            "precipitationProbability" = EXCLUDED."precipitationProbability",
+            "weatherCode" = EXCLUDED."weatherCode",
+            status = EXCLUDED.status,
+            "weatherScore" = EXCLUDED."weatherScore",
+            "forecastCreatedDate" = EXCLUDED."forecastCreatedDate",
+            "daysAhead" = EXCLUDED."daysAhead",
+            "validUntil" = EXCLUDED."validUntil",
+            "updatedAt" = EXCLUDED."updatedAt"
+          RETURNING 1
+        )
+        DELETE FROM weather_data
+        WHERE "dataType" = 'forecast' 
+          AND "weatherDate" < $1
+        RETURNING 1;
+        `,
+        [
+          today,
+          new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000), // validUntil: 1 year from now
+        ],
+      );
 
-      let converted = 0;
-      for (const forecast of pastForecasts) {
-        // Create historical entry
-        const historicalEntry = this.weatherDataRepository.create({
-          ...forecast,
-          id: this.getWeatherDataId(
-            forecast.parkId || null,
-            forecast.weatherDate.toISOString().split('T')[0],
-            WeatherDataType.HISTORICAL,
-          ),
-          dataType: WeatherDataType.HISTORICAL,
-          validUntil: new Date(today.getTime() + 365 * 24 * 60 * 60 * 1000), // Keep historical data for 1 year
-        });
-
-        await this.weatherDataRepository.save(historicalEntry);
-        await this.weatherDataRepository.remove(forecast);
-        converted++;
-      }
-
+      const converted = result.length;
       if (converted > 0) {
         this.logger.log(
           `Converted ${converted} forecast entries to historical data`,
