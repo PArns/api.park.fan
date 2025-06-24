@@ -36,7 +36,11 @@ export class StatisticsService {
   /**
    * Helper function to calculate if a park is open based on the percentage of open rides
    */
-  private calculateParkOpenStatus(park: any, queueTimesMap: Map<number, QueueTime>, openThreshold?: number): boolean {
+  private calculateParkOpenStatus(
+    park: any,
+    queueTimesMap: Map<number, QueueTime>,
+    openThreshold?: number,
+  ): boolean {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
     const allRides = this.parkUtils.getAllRidesFromPark(park);
     const totalRideCount = allRides.length;
@@ -62,9 +66,10 @@ export class StatisticsService {
    */
   async getStatistics(openThreshold?: number) {
     const threshold = openThreshold ?? this.getDefaultOpenThreshold();
-    
+
     // Get database counts (cached)
-    const { totalParks, totalThemeAreas, totalRides } = await this.getCachedDbCounts();
+    const { totalParks, totalThemeAreas, totalRides } =
+      await this.getCachedDbCounts();
 
     // Load parks with optimized approach
     const allParks = await this.loadParksOptimized();
@@ -75,9 +80,10 @@ export class StatisticsService {
       .map((r) => r.id);
 
     // Load queue times from cache
-    this.currentQueueTimesMap = allRideIds.length > 0 
-      ? await this.getLatestQueueTimesFromCache(allRideIds)
-      : new Map();
+    this.currentQueueTimesMap =
+      allRideIds.length > 0
+        ? await this.getLatestQueueTimesFromCache(allRideIds)
+        : new Map();
 
     // Calculate park status
     const openParks = allParks.filter((park) =>
@@ -100,7 +106,11 @@ export class StatisticsService {
     );
 
     // Calculate ride statistics
-    const rideStatistics = this.calculateRideStatistics(allParks, threshold, this.currentQueueTimesMap);
+    const rideStatistics = this.calculateRideStatistics(
+      allParks,
+      threshold,
+      this.currentQueueTimesMap,
+    );
 
     // Clear the queue times map after use
     this.currentQueueTimesMap.clear();
@@ -126,7 +136,9 @@ export class StatisticsService {
   /**
    * Load latest queue times from cache via RidesService
    */
-  private async getLatestQueueTimesFromCache(rideIds: number[]): Promise<Map<number, QueueTime>> {
+  private async getLatestQueueTimesFromCache(
+    rideIds: number[],
+  ): Promise<Map<number, QueueTime>> {
     return await this.ridesService.getLatestQueueTimesFromCache(rideIds);
   }
 
@@ -143,7 +155,11 @@ export class StatisticsService {
 
     parks.forEach((park) => {
       const continent = park.continent;
-      const isOpen = this.calculateParkOpenStatus(park, queueTimesMap, threshold);
+      const isOpen = this.calculateParkOpenStatus(
+        park,
+        queueTimesMap,
+        threshold,
+      );
 
       if (!continentStats.has(continent)) {
         continentStats.set(continent, { total: 0, open: 0 });
@@ -178,7 +194,11 @@ export class StatisticsService {
 
     parks.forEach((park) => {
       const country = park.country;
-      const isOpen = this.calculateParkOpenStatus(park, queueTimesMap, threshold);
+      const isOpen = this.calculateParkOpenStatus(
+        park,
+        queueTimesMap,
+        threshold,
+      );
 
       if (!countryStats.has(country)) {
         countryStats.set(country, { total: 0, open: 0 });
@@ -204,7 +224,11 @@ export class StatisticsService {
   /**
    * Calculate comprehensive ride statistics
    */
-  private calculateRideStatistics(parks: any[], threshold: number, queueTimesMap: Map<number, QueueTime>) {
+  private calculateRideStatistics(
+    parks: any[],
+    threshold: number,
+    queueTimesMap: Map<number, QueueTime>,
+  ) {
     let totalRides = 0;
     let activeRides = 0;
     let openRides = 0;
@@ -420,7 +444,13 @@ export class StatisticsService {
 
     return parks
       .map((park) => {
-        if (!this.calculateParkOpenStatus(park, this.currentQueueTimesMap, threshold)) {
+        if (
+          !this.calculateParkOpenStatus(
+            park,
+            this.currentQueueTimesMap,
+            threshold,
+          )
+        ) {
           return null;
         }
         const allRides = this.parkUtils.getAllRidesFromPark(park);
@@ -487,7 +517,13 @@ export class StatisticsService {
 
     return parks
       .map((park) => {
-        if (!this.calculateParkOpenStatus(park, this.currentQueueTimesMap, threshold)) {
+        if (
+          !this.calculateParkOpenStatus(
+            park,
+            this.currentQueueTimesMap,
+            threshold,
+          )
+        ) {
           return null;
         }
         const allRides = this.parkUtils.getAllRidesFromPark(park);
@@ -550,40 +586,40 @@ export class StatisticsService {
   private async loadParksOptimized(): Promise<any[]> {
     // Load parks first (lightweight)
     const parks = await this.parkRepository.find();
-    
+
     // Load all theme areas with their park relations
     const themeAreas = await this.themeAreaRepository.find({
       relations: ['park'],
     });
-    
+
     // Load all rides with their park and theme area relations
     const rides = await this.rideRepository.find({
       relations: ['park', 'themeArea'],
       where: { isActive: true }, // Only load active rides for better performance
     });
-    
+
     // Build maps for efficient lookups
     const themeAreasByPark = new Map<number, any[]>();
     const ridesByPark = new Map<number, any[]>();
     const ridesByThemeArea = new Map<number, any[]>();
-    
+
     // Group theme areas by park
-    themeAreas.forEach(themeArea => {
+    themeAreas.forEach((themeArea) => {
       const parkId = themeArea.park.id;
       if (!themeAreasByPark.has(parkId)) {
         themeAreasByPark.set(parkId, []);
       }
       themeAreasByPark.get(parkId)!.push(themeArea);
     });
-    
+
     // Group rides by park and theme area
-    rides.forEach(ride => {
+    rides.forEach((ride) => {
       const parkId = ride.park.id;
       if (!ridesByPark.has(parkId)) {
         ridesByPark.set(parkId, []);
       }
       ridesByPark.get(parkId)!.push(ride);
-      
+
       if (ride.themeArea) {
         const themeAreaId = ride.themeArea.id;
         if (!ridesByThemeArea.has(themeAreaId)) {
@@ -592,17 +628,17 @@ export class StatisticsService {
         ridesByThemeArea.get(themeAreaId)!.push(ride);
       }
     });
-    
+
     // Assemble the final structure
-    return parks.map(park => {
+    return parks.map((park) => {
       const parkThemeAreas = themeAreasByPark.get(park.id) || [];
       const parkRides = ridesByPark.get(park.id) || [];
-      
+
       // Add rides to theme areas
-      parkThemeAreas.forEach(themeArea => {
+      parkThemeAreas.forEach((themeArea) => {
         themeArea.rides = ridesByThemeArea.get(themeArea.id) || [];
       });
-      
+
       return {
         ...park,
         themeAreas: parkThemeAreas,
@@ -614,27 +650,34 @@ export class StatisticsService {
   /**
    * Get cached database counts or fetch from DB
    */
-  private async getCachedDbCounts(): Promise<{ totalParks: number; totalThemeAreas: number; totalRides: number }> {
+  private async getCachedDbCounts(): Promise<{
+    totalParks: number;
+    totalThemeAreas: number;
+    totalRides: number;
+  }> {
     const cacheKey = 'db_counts';
-    const cached = await this.cacheService.getAsync<{ totalParks: number; totalThemeAreas: number; totalRides: number }>(cacheKey);
-    
+    const cached = await this.cacheService.getAsync<{
+      totalParks: number;
+      totalThemeAreas: number;
+      totalRides: number;
+    }>(cacheKey);
+
     if (cached) {
       return cached;
     }
-    
+
     // Fetch from database
     const [totalParks, totalThemeAreas, totalRides] = await Promise.all([
       this.parkRepository.count(),
       this.themeAreaRepository.count(),
       this.rideRepository.count(),
     ]);
-    
+
     const counts = { totalParks, totalThemeAreas, totalRides };
-    
+
     // Cache for 24 hours (counts don't change often)
     await this.cacheService.setAsync(cacheKey, counts, 24 * 3600);
-    
+
     return counts;
   }
-
 }

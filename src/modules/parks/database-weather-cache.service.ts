@@ -82,22 +82,22 @@ export class DatabaseWeatherCacheService implements WeatherCacheService {
           "updatedAt" = EXCLUDED."updatedAt"
         `,
         [
-          weatherId,                              // $1 - id
-          parkId,                                 // $2 - park_id
-          date,                                   // $3 - weatherDate
-          dataType,                               // $4 - dataType
-          data.temperature.min,                   // $5 - temperatureMin
-          data.temperature.max,                   // $6 - temperatureMax
-          data.precipitationProbability,          // $7 - precipitationProbability
-          data.weatherCode,                       // $8 - weatherCode
-          data.status,                            // $9 - status
-          data.weatherScore,                      // $10 - weatherScore
+          weatherId, // $1 - id
+          parkId, // $2 - park_id
+          date, // $3 - weatherDate
+          dataType, // $4 - dataType
+          data.temperature.min, // $5 - temperatureMin
+          data.temperature.max, // $6 - temperatureMax
+          data.precipitationProbability, // $7 - precipitationProbability
+          data.weatherCode, // $8 - weatherCode
+          data.status, // $9 - status
+          data.weatherScore, // $10 - weatherScore
           dataType === WeatherDataType.FORECAST ? now : null, // $11 - forecastCreatedDate
-          daysAhead || null,                      // $12 - daysAhead
-          validUntil,                             // $13 - validUntil
-          false,                                  // $14 - isFetchFailed
-          now,                                    // $15 - createdAt
-          now,                                    // $16 - updatedAt
+          daysAhead || null, // $12 - daysAhead
+          validUntil, // $13 - validUntil
+          false, // $14 - isFetchFailed
+          now, // $15 - createdAt
+          now, // $16 - updatedAt
         ],
       );
 

@@ -10,9 +10,9 @@ import { RidesModule } from '../rides/rides.module.js';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Park, ThemeArea, Ride]), 
+    TypeOrmModule.forFeature([Park, ThemeArea, Ride]),
     UtilsModule,
-    RidesModule
+    RidesModule,
   ],
   controllers: [StatisticsController],
   providers: [StatisticsService],

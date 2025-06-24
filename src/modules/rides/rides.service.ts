@@ -131,8 +131,8 @@ export class RidesService {
   async getLatestQueueTimeFromCache(rideId: number): Promise<any | null> {
     try {
       const cacheKey = `latest_queue_time_${rideId}`;
-      const cachedData = await this.cacheService.getAsync(cacheKey) as any;
-      
+      const cachedData = (await this.cacheService.getAsync(cacheKey)) as any;
+
       if (cachedData && cachedData.waitTime !== undefined) {
         return {
           waitTime: cachedData.waitTime,
@@ -140,10 +140,13 @@ export class RidesService {
           lastUpdated: cachedData.lastUpdated,
         };
       }
-      
+
       return null;
     } catch (error) {
-      console.error(`Error getting queue time from cache for ride ${rideId}:`, error);
+      console.error(
+        `Error getting queue time from cache for ride ${rideId}:`,
+        error,
+      );
       return null;
     }
   }
@@ -151,9 +154,11 @@ export class RidesService {
   /**
    * Get the latest queue times for multiple rides from Redis cache (optimized with pipeline)
    */
-  async getLatestQueueTimesFromCache(rideIds: number[]): Promise<Map<number, any>> {
+  async getLatestQueueTimesFromCache(
+    rideIds: number[],
+  ): Promise<Map<number, any>> {
     const queueTimesMap = new Map<number, any>();
-    
+
     if (rideIds.length === 0) {
       return queueTimesMap;
     }
@@ -162,30 +167,30 @@ export class RidesService {
       // Use Redis pipeline for batch operations
       const redis = this.cacheService.getRedisClient();
       const pipeline = redis.pipeline();
-      
+
       // Prepare all cache keys
-      const cacheKeys = rideIds.map(rideId => `latest_queue_time_${rideId}`);
-      
+      const cacheKeys = rideIds.map((rideId) => `latest_queue_time_${rideId}`);
+
       // Add all get operations to pipeline
-      cacheKeys.forEach(key => {
+      cacheKeys.forEach((key) => {
         pipeline.get(key);
       });
-      
+
       // Execute all operations at once
       const results = await pipeline.exec();
-      
+
       if (!results) {
         console.warn('Redis pipeline returned null results');
         return queueTimesMap;
       }
-      
+
       // Process results
       results.forEach(([error, result], index) => {
         if (error) {
           console.error(`Error getting cache key ${cacheKeys[index]}:`, error);
           return;
         }
-        
+
         if (result) {
           try {
             const cachedData = JSON.parse(result as string);
@@ -197,18 +202,18 @@ export class RidesService {
               });
             }
           } catch (parseError) {
-            console.error(`Error parsing cache data for ride ${rideIds[index]}:`, parseError);
+            console.error(
+              `Error parsing cache data for ride ${rideIds[index]}:`,
+              parseError,
+            );
           }
         }
       });
-      
     } catch (error) {
       console.error('Error in batch cache loading:', error);
       throw error;
     }
-    
+
     return queueTimesMap;
   }
-
-
 }

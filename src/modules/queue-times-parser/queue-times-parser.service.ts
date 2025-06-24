@@ -535,8 +535,11 @@ export class QueueTimesParserService {
         // Process each queue time individually to avoid complex bulk insert issues
         const rideProcessingPromises = queueTimesToInsert.map(
           async (qtData) => {
-            const result = await this.processIndividualQueueTime(qtData, park.id);
-            
+            const result = await this.processIndividualQueueTime(
+              qtData,
+              park.id,
+            );
+
             // If a new queue time was created, collect it for cache update
             if (result.newEntries > 0 && result.queueTimeData) {
               newQueueTimes.set(result.queueTimeData.rideId, {
@@ -545,7 +548,7 @@ export class QueueTimesParserService {
                 lastUpdated: result.queueTimeData.lastUpdated,
               });
             }
-            
+
             return result;
           },
         );
@@ -589,7 +592,11 @@ export class QueueTimesParserService {
   private async processIndividualQueueTime(
     qtData: any,
     parkId: number,
-  ): Promise<{ newEntries: number; skippedEntries: number; queueTimeData?: any }> {
+  ): Promise<{
+    newEntries: number;
+    skippedEntries: number;
+    queueTimeData?: any;
+  }> {
     try {
       // First, find the actual ride entity to get its database ID
       const ride = await this.rideRepository.findOne({
@@ -627,17 +634,17 @@ export class QueueTimesParserService {
         });
 
         await this.queueTimeRepository.save(queueTime);
-        
+
         // Return queue time data for cache update
-        return { 
-          newEntries: 1, 
+        return {
+          newEntries: 1,
           skippedEntries: 0,
           queueTimeData: {
             rideId: ride.id,
             waitTime: qtData.waitTime,
             isOpen: qtData.isOpen,
             lastUpdated: qtData.lastUpdated,
-          }
+          },
         };
       } else {
         return { newEntries: 0, skippedEntries: 1 };
@@ -659,23 +666,30 @@ export class QueueTimesParserService {
   /**
    * Updates the cache with the latest queue times for rides
    */
-  private async updateQueueTimesCache(queueTimesMap: Map<number, any>): Promise<void> {
+  private async updateQueueTimesCache(
+    queueTimesMap: Map<number, any>,
+  ): Promise<void> {
     try {
-      this.logger.debug(`Updating cache with ${queueTimesMap.size} queue times`);
-      
+      this.logger.debug(
+        `Updating cache with ${queueTimesMap.size} queue times`,
+      );
+
       const promises = [];
       for (const [rideId, queueTimeData] of queueTimesMap) {
         const cacheKey = `latest_queue_time_${rideId}`;
-        
+
         // Cache for 7 days - queue time data should persist longer to avoid data loss
-        promises.push(this.cacheService.setAsync(cacheKey, queueTimeData, 7 * 24 * 3600));
+        promises.push(
+          this.cacheService.setAsync(cacheKey, queueTimeData, 7 * 24 * 3600),
+        );
       }
-      
+
       await Promise.all(promises);
-      this.logger.debug(`Cache updated successfully for ${queueTimesMap.size} rides`);
+      this.logger.debug(
+        `Cache updated successfully for ${queueTimesMap.size} rides`,
+      );
     } catch (error) {
       this.logger.error('Failed to update queue times cache:', error);
     }
   }
-
 }

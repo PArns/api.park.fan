@@ -51,9 +51,7 @@ export class CacheService implements ICacheService, OnModuleDestroy {
       this.logger.error('Redis cache connection error:', error);
     });
 
-    this.logger.log(
-      `Cache service initialized with Redis backend`,
-    );
+    this.logger.log(`Cache service initialized with Redis backend`);
   }
 
   /**
@@ -80,7 +78,7 @@ export class CacheService implements ICacheService, OnModuleDestroy {
   async getAsync<T>(key: string): Promise<T | null> {
     try {
       const value = await this.redis.get(key);
-      
+
       if (!value) {
         this.stats.misses++;
         return null;
@@ -102,7 +100,7 @@ export class CacheService implements ICacheService, OnModuleDestroy {
     try {
       const ttl = ttlSeconds || Math.floor(this.config.defaultTtl / 1000);
       const serializedValue = JSON.stringify(value);
-      
+
       if (ttl > 0) {
         this.redis.setex(key, ttl, serializedValue);
       } else {
@@ -120,7 +118,7 @@ export class CacheService implements ICacheService, OnModuleDestroy {
     try {
       const ttl = ttlSeconds || Math.floor(this.config.defaultTtl / 1000);
       const serializedValue = JSON.stringify(value);
-      
+
       if (ttl > 0) {
         await this.redis.setex(key, ttl, serializedValue);
       } else {
@@ -164,7 +162,7 @@ export class CacheService implements ICacheService, OnModuleDestroy {
   clear(): void {
     try {
       // Fire and forget for sync compatibility
-      this.redis.keys('*').then(keys => {
+      this.redis.keys('*').then((keys) => {
         if (keys.length > 0) {
           this.redis.del(...keys);
         }

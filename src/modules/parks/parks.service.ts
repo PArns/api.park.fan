@@ -78,11 +78,13 @@ export class ParksService {
       themeArea: undefined, // Remove theme area reference to avoid circular data
       park: undefined, // Remove park reference to avoid circular data
     };
-  }  /**
+  } /**
    * Helper function to transform theme areas with rides using queue time map
    */
   private transformThemeArea(themeArea: any, queueTimeMap: Map<number, any>) {
-    const rides = themeArea.rides.map((ride) => this.transformRide(ride, queueTimeMap));
+    const rides = themeArea.rides.map((ride) =>
+      this.transformRide(ride, queueTimeMap),
+    );
 
     return {
       ...themeArea,
@@ -111,9 +113,9 @@ export class ParksService {
     const queueTimeMap = new Map();
     const allRides = [
       ...(park.rides || []),
-      ...(park.themeAreas || []).flatMap(ta => ta.rides || [])
+      ...(park.themeAreas || []).flatMap((ta) => ta.rides || []),
     ];
-    
+
     allRides.forEach((ride) => {
       if (ride.queueTimes && ride.queueTimes.length > 0) {
         queueTimeMap.set(ride.id, ride.queueTimes[0]);
@@ -137,7 +139,9 @@ export class ParksService {
     }
 
     // Handle parks with and without theme areas
-    let themeAreas = park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea, queueTimeMap));
+    let themeAreas = park.themeAreas.map((themeArea) =>
+      this.transformThemeArea(themeArea, queueTimeMap),
+    );
 
     // If park has no theme areas but has direct rides, create a virtual theme area
     if (themeAreas.length === 0 && park.rides && park.rides.length > 0) {
@@ -150,7 +154,9 @@ export class ParksService {
             id: null,
             queueTimesId: null,
             name: 'Rides', // Generic name for rides without theme area
-            rides: unassignedRides.map((ride) => this.transformRide(ride, queueTimeMap)),
+            rides: unassignedRides.map((ride) =>
+              this.transformRide(ride, queueTimeMap),
+            ),
           },
         ];
       }
@@ -188,7 +194,10 @@ export class ParksService {
     if (includeCrowdLevel) {
       try {
         result.crowdLevel =
-          await this.crowdLevelService.calculateCrowdLevel(park);
+          await this.crowdLevelService.calculateCrowdLevelFromCache(
+            park,
+            queueTimeMap,
+          );
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -221,13 +230,6 @@ export class ParksService {
     includeCrowdLevel: boolean = true,
     includeWeather: boolean = true,
   ) {
-    const openStatus = await this.parkUtils.getDetailedParkOpenStatusFromDb(
-      park.id,
-      openThreshold,
-    );
-    const waitTimeDistribution =
-      await this.parkUtils.calculateWaitTimeDistributionFromDb(park.id);
-
     // Get pre-fetched weather data from map using park ID
     let weatherData = null;
     if (includeWeather && weatherDataMap.size > 0) {
@@ -238,17 +240,29 @@ export class ParksService {
     const queueTimeMap = new Map();
     const allRides = [
       ...(park.rides || []),
-      ...(park.themeAreas || []).flatMap(ta => ta.rides || [])
+      ...(park.themeAreas || []).flatMap((ta) => ta.rides || []),
     ];
-    
+
     allRides.forEach((ride) => {
       if (ride.queueTimes && ride.queueTimes.length > 0) {
         queueTimeMap.set(ride.id, ride.queueTimes[0]);
       }
     });
 
+    // Calculate operating status from already loaded queue times (no DB queries)
+    const openStatus = this.calculateParkOperatingStatusFromCache(
+      allRides,
+      openThreshold,
+    );
+
+    // Calculate wait time distribution from already loaded queue times (no DB queries)
+    const waitTimeDistribution =
+      this.calculateWaitTimeDistributionFromCache(allRides);
+
     // Handle parks with and without theme areas
-    let themeAreas = park.themeAreas.map((themeArea) => this.transformThemeArea(themeArea, queueTimeMap));
+    let themeAreas = park.themeAreas.map((themeArea) =>
+      this.transformThemeArea(themeArea, queueTimeMap),
+    );
 
     // If park has no theme areas but has direct rides, create a virtual theme area
     if (themeAreas.length === 0 && park.rides && park.rides.length > 0) {
@@ -261,7 +275,9 @@ export class ParksService {
             id: null,
             queueTimesId: null,
             name: 'Rides', // Generic name for rides without theme area
-            rides: unassignedRides.map((ride) => this.transformRide(ride, queueTimeMap)),
+            rides: unassignedRides.map((ride) =>
+              this.transformRide(ride, queueTimeMap),
+            ),
           },
         ];
       }
@@ -298,8 +314,12 @@ export class ParksService {
     // Only calculate and include crowd level if requested
     if (includeCrowdLevel) {
       try {
+        // Use cache-optimized crowd level calculation
         result.crowdLevel =
-          await this.crowdLevelService.calculateCrowdLevel(park);
+          await this.crowdLevelService.calculateCrowdLevelFromCache(
+            park,
+            queueTimeMap,
+          );
       } catch (error) {
         this.logger.warn(
           `Failed to calculate crowd level for park ${park.id}:`,
@@ -375,6 +395,7 @@ export class ParksService {
         hasPrev: boolean;
       };
     }>(cacheKey);
+
     if (cached) {
       return cached;
     }
@@ -581,34 +602,17 @@ export class ParksService {
 
     let queueTimeMap = new Map();
     if (allRideIds.length > 0) {
-      // Use optimized query to get ONLY the latest queue time for each ride
-      const latestQueueTimes = await this.parkRepository.query(
-        `
-        SELECT DISTINCT ON (qt."rideId") 
-          qt."rideId",
-          qt.id as queue_time_id,
-          qt."waitTime",
-          qt."isOpen",
-          qt."lastUpdated",
-          qt."recordedAt"
-        FROM queue_time qt
-        WHERE qt."rideId" = ANY($1)
-        ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
-      `,
-        [allRideIds],
-      );
+      // Use cache instead of database query for better performance
+      const cachedQueueTimes =
+        await this.ridesService.getLatestQueueTimesFromCache(
+          allRideIds as number[],
+        );
 
-      // Create lookup map
-      latestQueueTimes.forEach((qt) => {
-        queueTimeMap.set(qt.rideId, [
-          {
-            id: qt.queue_time_id,
-            waitTime: qt.waitTime,
-            isOpen: qt.isOpen,
-            lastUpdated: qt.lastUpdated,
-            recordedAt: qt.recordedAt,
-          },
-        ]);
+      // Convert to old format for compatibility
+      cachedQueueTimes.forEach((queueTime, rideId) => {
+        if (queueTime) {
+          queueTimeMap.set(rideId, [queueTime]); // Wrap in array for compatibility
+        }
       });
     }
 
@@ -678,6 +682,7 @@ export class ParksService {
 
     // Cache the result using default TTL
     this.cacheService.set(cacheKey, result);
+
     return result;
   }
   /**
@@ -804,37 +809,19 @@ export class ParksService {
       }
     });
 
-    // Batch load latest queue times for all rides in this park
+    // Batch load latest queue times for all rides in this park from cache
     let queueTimeMap = new Map();
     if (allRideIds.size > 0) {
       const rideIdsArray = Array.from(allRideIds);
-      const latestQueueTimes = await this.parkRepository.query(
-        `
-        SELECT DISTINCT ON (qt."rideId") 
-          qt."rideId",
-          qt.id as queue_time_id,
-          qt."waitTime",
-          qt."isOpen",
-          qt."lastUpdated",
-          qt."recordedAt"
-        FROM queue_time qt
-        WHERE qt."rideId" = ANY($1)
-        ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
-      `,
-        [rideIdsArray],
-      );
+      // Use cache instead of database query
+      const cachedQueueTimes =
+        await this.ridesService.getLatestQueueTimesFromCache(rideIdsArray);
 
-      // Create lookup map
-      latestQueueTimes.forEach((qt) => {
-        queueTimeMap.set(qt.rideId, [
-          {
-            id: qt.queue_time_id,
-            waitTime: qt.waitTime,
-            isOpen: qt.isOpen,
-            lastUpdated: qt.lastUpdated,
-            recordedAt: qt.recordedAt,
-          },
-        ]);
+      // Convert to old format for compatibility
+      cachedQueueTimes.forEach((queueTime, rideId) => {
+        if (queueTime) {
+          queueTimeMap.set(rideId, [queueTime]); // Wrap in array for compatibility
+        }
       });
     }
 
@@ -941,33 +928,15 @@ export class ParksService {
     if (allRides.length > 0) {
       const rideIds = allRides.map((ride) => ride.id);
 
-      // Get only the most recent queue time for each ride using efficient query
-      const latestQueueTimes = await this.parkRepository.query(
-        `
-        WITH latest_queue_times AS (
-          SELECT DISTINCT ON (qt."rideId") 
-            qt."rideId",
-            qt."waitTime",
-            qt."isOpen",
-            qt."lastUpdated",
-            qt."recordedAt"
-          FROM queue_time qt
-          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
-          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
-        )
-        SELECT * FROM latest_queue_times
-      `,
-        rideIds,
-      );
+      // Use cache instead of database query for better performance
+      const cachedQueueTimes =
+        await this.ridesService.getLatestQueueTimesFromCache(rideIds);
 
-      // Create a map for quick lookup
-      latestQueueTimes.forEach((qt) => {
-        queueTimeMap.set(qt.rideId, {
-          waitTime: qt.waitTime,
-          isOpen: qt.isOpen,
-          lastUpdated: qt.lastUpdated,
-          recordedAt: qt.recordedAt,
-        });
+      // Convert to map for quick lookup
+      cachedQueueTimes.forEach((queueTime, rideId) => {
+        if (queueTime) {
+          queueTimeMap.set(rideId, queueTime);
+        }
       });
     }
 
@@ -1188,36 +1157,15 @@ export class ParksService {
     if (allRides.length > 0) {
       const rideIds = allRides.map((ride) => ride.id);
 
-      const latestQueueTimes = await this.parkRepository.query(
-        `
-        WITH latest_queue_times AS (
-          SELECT DISTINCT ON (qt."rideId")
-            qt."rideId",
-            qt.id,
-            qt."waitTime",
-            qt."isOpen",
-            qt."lastUpdated",
-            qt."recordedAt"
-          FROM queue_time qt
-          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
-          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
-        )
-        SELECT * FROM latest_queue_times
-      `,
-        rideIds,
-      );
+      // Use cache instead of database query for better performance
+      const cachedQueueTimes =
+        await this.ridesService.getLatestQueueTimesFromCache(rideIds);
 
       const queueTimeMap = new Map();
-      latestQueueTimes.forEach((qt) => {
-        queueTimeMap.set(qt.rideId, [
-          {
-            id: qt.id,
-            waitTime: qt.waitTime,
-            isOpen: qt.isOpen,
-            lastUpdated: qt.lastUpdated,
-            recordedAt: qt.recordedAt,
-          },
-        ]);
+      cachedQueueTimes.forEach((queueTime, rideId) => {
+        if (queueTime) {
+          queueTimeMap.set(rideId, [queueTime]); // Wrap in array for compatibility
+        }
       });
 
       park.rides.forEach((ride) => {
@@ -1298,38 +1246,16 @@ export class ParksService {
     if (allRides.length > 0) {
       const rideIds = allRides.map((ride) => ride.id);
 
-      // Get only the most recent queue time for each ride using a more efficient query
-      const latestQueueTimes = await this.parkRepository.query(
-        `
-        WITH latest_queue_times AS (
-          SELECT DISTINCT ON (qt."rideId") 
-            qt."rideId",
-            qt.id,
-            qt."waitTime",
-            qt."isOpen",
-            qt."lastUpdated",
-            qt."recordedAt"
-          FROM queue_time qt
-          WHERE qt."rideId" IN (${rideIds.map((_, i) => `$${i + 1}`).join(',')})
-          ORDER BY qt."rideId", qt."lastUpdated" DESC, qt."recordedAt" DESC
-        )
-        SELECT * FROM latest_queue_times
-      `,
-        rideIds,
-      );
+      // Use cache instead of database query for better performance
+      const cachedQueueTimes =
+        await this.ridesService.getLatestQueueTimesFromCache(rideIds);
 
-      // Create a map for quick lookup
+      // Create a map for quick lookup, converting to old format for compatibility
       const queueTimeMap = new Map();
-      latestQueueTimes.forEach((qt) => {
-        queueTimeMap.set(qt.rideId, [
-          {
-            id: qt.id,
-            waitTime: qt.waitTime,
-            isOpen: qt.isOpen,
-            lastUpdated: qt.lastUpdated,
-            recordedAt: qt.recordedAt,
-          },
-        ]);
+      cachedQueueTimes.forEach((queueTime, rideId) => {
+        if (queueTime) {
+          queueTimeMap.set(rideId, [queueTime]); // Wrap in array for compatibility
+        }
       });
 
       // Attach the latest queue times to rides
@@ -1413,7 +1339,9 @@ export class ParksService {
     }
 
     // Load only the latest queue time for this specific ride
-    const latestQueueTime = await this.ridesService.getLatestQueueTimeFromCache(targetRide.id);
+    const latestQueueTime = await this.ridesService.getLatestQueueTimeFromCache(
+      targetRide.id,
+    );
 
     return {
       id: targetRide.id,
@@ -1465,5 +1393,87 @@ export class ParksService {
     variations.add(slug.toUpperCase());
 
     return Array.from(variations);
+  }
+
+  /**
+   * Calculate park operating status from cached queue times without database queries
+   * @private
+   */
+  private calculateParkOperatingStatusFromCache(
+    rides: any[],
+    openThreshold?: number,
+  ): {
+    isOpen: boolean;
+    openRideCount: number;
+    totalRideCount: number;
+    operatingPercentage: number;
+  } {
+    const threshold = openThreshold ?? this.getDefaultOpenThreshold();
+
+    const totalRideCount = rides.length;
+    const openRideCount = rides.filter((ride) => {
+      if (ride.queueTimes && ride.queueTimes.length > 0) {
+        return ride.queueTimes[0].isOpen;
+      }
+      return false;
+    }).length;
+
+    const operatingPercentage =
+      totalRideCount > 0
+        ? Math.round((openRideCount / totalRideCount) * 100)
+        : 0;
+
+    return {
+      isOpen: operatingPercentage >= threshold,
+      openRideCount,
+      totalRideCount,
+      operatingPercentage,
+    };
+  }
+
+  /**
+   * Calculate wait time distribution from cached queue times without database queries
+   * @private
+   */
+  private calculateWaitTimeDistributionFromCache(rides: any[]): {
+    '0-10': number;
+    '11-30': number;
+    '31-60': number;
+    '61-120': number;
+    '120+': number;
+  } {
+    const distribution = {
+      '0-10': 0,
+      '11-30': 0,
+      '31-60': 0,
+      '61-120': 0,
+      '120+': 0,
+    };
+
+    rides.forEach((ride) => {
+      if (ride.queueTimes && ride.queueTimes.length > 0) {
+        const queueTime = ride.queueTimes[0];
+        if (
+          queueTime.isOpen &&
+          queueTime.waitTime !== null &&
+          queueTime.waitTime !== undefined
+        ) {
+          const waitTime = queueTime.waitTime;
+          if (waitTime <= 10) {
+            distribution['0-10']++;
+          } else if (waitTime <= 30) {
+            distribution['11-30']++;
+          } else if (waitTime <= 60) {
+            distribution['31-60']++;
+          } else if (waitTime <= 120) {
+            distribution['61-120']++;
+          } else {
+            distribution['120+']++;
+          }
+        }
+      }
+    });
+
+    return distribution;
   }
 }

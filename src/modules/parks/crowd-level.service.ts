@@ -8,6 +8,7 @@ import {
   Ride as RideType,
 } from '../utils/park-utils.types.js';
 import { ParkUtilsService } from '../utils/park-utils.service.js';
+import { CacheService } from '../utils/cache.service.js';
 
 type RideWithQueueTime = RideType & { latestQueueTime: QueueTime | null };
 
@@ -28,19 +29,32 @@ export class CrowdLevelService {
     @InjectRepository(QueueTime)
     private readonly queueTimeRepository: Repository<QueueTime>,
     private readonly parkUtils: ParkUtilsService,
+    private readonly cacheService: CacheService,
   ) {}
 
   /**
-   * Calculate crowd level for a park
+   * Calculate crowd level for a park using pre-loaded queue time data (cache-optimized)
    */
-  async calculateCrowdLevel(park: ParkType): Promise<CrowdLevel> {
+  async calculateCrowdLevelFromCache(
+    park: ParkType,
+    rideQueueTimeMap: Map<number, any>, // Pre-loaded queue times from cache
+  ): Promise<CrowdLevel> {
     try {
       this.logger.debug(
-        `Starting crowd level calculation for park: ${park.name}`,
+        `Starting crowd level calculation for park: ${park.name} (cache version)`,
       );
 
-      // Get all rides from the park that have recent queue time data
-      const ridesWithCurrentData = await this.getRidesWithCurrentData(park);
+      // Get all rides from the park and filter those with current queue time data
+      const allRides = this.parkUtils.getAllRidesFromPark(park);
+      const ridesWithCurrentData = allRides
+        .map((ride) => {
+          const currentQueueTime = rideQueueTimeMap.get(ride.id);
+          return {
+            ...ride,
+            latestQueueTime: currentQueueTime || null,
+          };
+        })
+        .filter((ride) => ride.latestQueueTime && ride.latestQueueTime.isOpen);
 
       if (ridesWithCurrentData.length === 0) {
         this.logger.debug(
@@ -78,7 +92,7 @@ export class CrowdLevelService {
       const currentAverage = this.calculateAverageWaitTime(topRides);
       this.logger.debug(`Current average wait time: ${currentAverage}`);
 
-      // Get historical baseline for these rides
+      // Get historical baseline for these rides (still need database for historical data)
       const historicalBaseline = await this.calculateHistoricalBaseline(
         topRides.map((ride) => ride.id),
       );
@@ -99,67 +113,23 @@ export class CrowdLevelService {
 
       this.logger.debug(`Confidence level: ${confidence}%`);
 
+      // Get crowd level label
+      const label = this.getCrowdLevelLabel(crowdLevel);
+
       return {
         level: crowdLevel,
-        label: this.getCrowdLevelLabel(crowdLevel),
+        label,
         ridesUsed: topRides.length,
-        totalRides: ridesWithCurrentData.length,
-        confidence: confidence,
-        historicalBaseline: Math.round(historicalBaseline),
-        currentAverage: Math.round(currentAverage),
+        totalRides: allRides.length,
+        historicalBaseline,
+        currentAverage,
+        confidence,
         calculatedAt: new Date(),
       };
     } catch (error) {
-      this.logger.error(
-        `Failed to calculate crowd level for park: ${park.id}`,
-        error,
-      );
-      return this.getDefaultCrowdLevel(
-        0,
-        0,
-        'An error occurred during calculation',
-      );
+      this.logger.error('Error calculating crowd level from cache:', error);
+      return this.getDefaultCrowdLevel(0, 0, 'Error calculating crowd level');
     }
-  }
-
-  /**
-   * Get rides that have current data and are not closed
-   * @param park The park to get rides from
-   * @returns A list of rides with their latest queue time
-   */
-  private async getRidesWithCurrentData(
-    park: ParkType,
-  ): Promise<RideWithQueueTime[]> {
-    if (!park.rides || park.rides.length === 0) {
-      return [];
-    }
-
-    const rideIds = park.rides.map((r) => r.id);
-
-    // Get the latest queue time for each ride using a single query
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const latestQueueTimes: any[] = await this.queueTimeRepository
-      .createQueryBuilder('qt')
-      .select('qt.*')
-      .distinctOn(['qt.rideId'])
-      .where('qt.rideId IN (:...rideIds)', { rideIds })
-      .orderBy('qt.rideId')
-      .addOrderBy('qt.recordedAt', 'DESC')
-      .getRawMany();
-
-    const latestQueueTimesMap = new Map<number, QueueTime>(
-      latestQueueTimes.map((qt) => [qt.rideId, qt]),
-    );
-
-    const ridesWithQueueTime: RideWithQueueTime[] = park.rides.map((ride) => ({
-      ...ride,
-      latestQueueTime: latestQueueTimesMap.get(ride.id) ?? null,
-    }));
-
-    // Filter out rides that are closed or have no data
-    return ridesWithQueueTime.filter((ride) => {
-      return ride.latestQueueTime && ride.latestQueueTime.isOpen;
-    });
   }
 
   /**
@@ -193,11 +163,31 @@ export class CrowdLevelService {
 
   /**
    * Calculate historical baseline (95th percentile) for given rides over the last 2 years
+   * Uses caching to avoid expensive database queries for the same ride combinations
    */
   private async calculateHistoricalBaseline(
     rideIds: number[],
   ): Promise<number> {
     if (rideIds.length === 0) return 0;
+
+    // Create cache key based on sorted ride IDs and current day
+    // We use daily granularity since new queue time data comes in throughout the day
+    const sortedRideIds = [...rideIds].sort((a, b) => a - b);
+    const currentDay = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
+    const cacheKey = `historical_baseline:${sortedRideIds.join(',')}:day:${currentDay}`;
+
+    // Check cache first
+    const cached = await this.cacheService.getAsync<number>(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      this.logger.debug(
+        `Historical baseline cache hit for ${rideIds.length} rides`,
+      );
+      return cached;
+    }
+
+    this.logger.debug(
+      `Historical baseline cache miss, querying database for ${rideIds.length} rides`,
+    );
 
     // Get historical data for the last 2 years
     const cutoffDate = new Date();
@@ -223,18 +213,40 @@ export class CrowdLevelService {
     );
 
     const row = result[0];
-    if (!row || parseInt(row.count, 10) < this.MIN_DATA_POINTS) {
-      return 0;
+    let baseline = 0;
+
+    if (row && parseInt(row.count, 10) >= this.MIN_DATA_POINTS) {
+      baseline = parseFloat(row.percentile);
     }
 
-    return parseFloat(row.percentile);
+    // Cache the result for 4 hours (refreshes multiple times per day as new data comes in)
+    await this.cacheService.setAsync(cacheKey, baseline, 4 * 3600);
+
+    return baseline;
   }
 
   /**
    * Calculate confidence level based on available historical data coverage
+   * Uses caching to avoid expensive database queries for the same ride combinations
    */
   private async calculateConfidence(rideIds: number[]): Promise<number> {
     if (rideIds.length === 0) return 0;
+
+    // Create cache key based on sorted ride IDs and current day
+    const sortedRideIds = [...rideIds].sort((a, b) => a - b);
+    const currentDay = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
+    const cacheKey = `confidence:${sortedRideIds.join(',')}:day:${currentDay}`;
+
+    // Check cache first
+    const cached = await this.cacheService.getAsync<number>(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      this.logger.debug(`Confidence cache hit for ${rideIds.length} rides`);
+      return cached;
+    }
+
+    this.logger.debug(
+      `Confidence cache miss, querying database for ${rideIds.length} rides`,
+    );
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.HISTORICAL_WINDOW_DAYS);
@@ -254,42 +266,46 @@ export class CrowdLevelService {
     );
 
     const rangeRow = dataRange[0];
+    let confidence = 10; // Default minimum confidence
 
-    if (!rangeRow || !rangeRow.firstDate || rangeRow.totalCount === '0') {
-      return 10; // Minimum confidence when no data
+    if (rangeRow && rangeRow.firstDate && rangeRow.totalCount !== '0') {
+      const firstDataDate = new Date(rangeRow.firstDate);
+      const lastDataDate = new Date(rangeRow.lastDate);
+
+      // Calculate actual data coverage (days between first and last data point)
+      const actualDataDays = Math.ceil(
+        (lastDataDate.getTime() - firstDataDate.getTime()) /
+          (1000 * 60 * 60 * 24),
+      );
+
+      // Calculate coverage percentage against the full historical window
+      const coveragePercentage = Math.min(
+        100,
+        (actualDataDays / this.HISTORICAL_WINDOW_DAYS) * 100,
+      );
+
+      // Also consider data density (minimum data points per day)
+      const totalCount = parseInt(rangeRow.totalCount, 10);
+      const expectedDataPointsPerDay = 24; // Assuming hourly data
+      const expectedTotalPoints =
+        this.HISTORICAL_WINDOW_DAYS * expectedDataPointsPerDay * rideIds.length;
+      const densityPercentage = Math.min(
+        100,
+        (totalCount / expectedTotalPoints) * 100,
+      );
+
+      // Final confidence is the average of coverage and density, weighted towards coverage
+      confidence = Math.round(
+        coveragePercentage * 0.7 + densityPercentage * 0.3,
+      );
+
+      confidence = Math.max(10, Math.min(100, confidence)); // Between 10% and 100%
     }
-    const firstDataDate = new Date(rangeRow.firstDate);
-    const lastDataDate = new Date(rangeRow.lastDate);
-    const today = new Date();
 
-    // Calculate actual data coverage (days between first and last data point)
-    const actualDataDays = Math.ceil(
-      (lastDataDate.getTime() - firstDataDate.getTime()) /
-        (1000 * 60 * 60 * 24),
-    );
+    // Cache the result for 4 hours (refreshes multiple times per day as new data comes in)
+    await this.cacheService.setAsync(cacheKey, confidence, 4 * 3600);
 
-    // Calculate coverage percentage against the full historical window
-    const coveragePercentage = Math.min(
-      100,
-      (actualDataDays / this.HISTORICAL_WINDOW_DAYS) * 100,
-    );
-
-    // Also consider data density (minimum data points per day)
-    const totalCount = parseInt(rangeRow.totalCount, 10);
-    const expectedDataPointsPerDay = 24; // Assuming hourly data
-    const expectedTotalPoints =
-      this.HISTORICAL_WINDOW_DAYS * expectedDataPointsPerDay * rideIds.length;
-    const densityPercentage = Math.min(
-      100,
-      (totalCount / expectedTotalPoints) * 100,
-    );
-
-    // Final confidence is the average of coverage and density, weighted towards coverage
-    const confidence = Math.round(
-      coveragePercentage * 0.7 + densityPercentage * 0.3,
-    );
-
-    return Math.max(10, Math.min(100, confidence)); // Between 10% and 100%
+    return confidence;
   }
 
   /**

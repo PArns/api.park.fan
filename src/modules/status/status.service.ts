@@ -17,10 +17,10 @@ export class StatusService {
   }
 
   getStatus(): { status: string; version: string; timestamp: string } {
-    return { 
+    return {
       status: 'OK',
       version: this.version,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
   }
 }
